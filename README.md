@@ -11,11 +11,17 @@ I made everything except for the 6502 CPU core which I took from a previous revi
 ![Project Image](https://github.com/iandailis/NES-FPGA/blob/main/docs/IMG_20220826_021004.jpg)
 ![Project Image](https://github.com/iandailis/NES-FPGA/blob/main/docs/resources.JPG)
 
+> [!IMPORTANT]
+> **Para o passo a passo completo e detalhado de compilação e execução, consulte:**
+> 👉 **[BUILD_GUIDE.md](BUILD_GUIDE.md)** (Guia de compilação do Hardware Quartus, Firmware Nios II, gravação JTAG, troca rápida de 57 jogos e configuração dos controladores PC/Web).
+
 Folders:
-- cart_init: Cartridge initialization, includes a python parser that generates prg.mif and chr.mif using a provided hex dump.
-- eclipse: Working directory for the USB controller programmed in C.
-- qsys: Generated files for the NIOS-IIe and the PLLs, and C source code for the usb controller
-- src: Hardware description of the NES.
+- `cart_init/`: Biblioteca com 57 jogos Mapper 0 (NROM) prontos e CLI `switch_game.js` para troca instantânea de ROMs e compilação rápida via terminal.
+- `eclipse/`: Workspace do Eclipse SBT para compilação e debug do firmware C do processador Nios II.
+- `qsys/`: Projeto do Platform Designer (NIOSIIe.qsys) e código-fonte em C (`qsys/software/usb_controller/main.c`) com suporte a 2 jogadores via JTAG UART.
+- `src/`: Descrição de hardware do NES em SystemVerilog (CPU 6502, PPU, RAM, Cartucho, VGA).
+- `web_controller/`: Servidor Web + WebSocket com UI interativa para teclado e Gamepads USB/Bluetooth (P1 e P2).
+- `pc_controller/`: Controlador de terminal em Python nativo a 60 FPS via Win32 API.
 
 To load a game (optional, by default the emulator loads Super Mario Bros):
 1. Download a NES ROM.
@@ -55,5 +61,3 @@ Issues:
 - Display is not centered on screen
 
 Enjoy!
-
--Ian D
