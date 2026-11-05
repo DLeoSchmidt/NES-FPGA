@@ -384,46 +384,61 @@ function setupTerminalKeyboard() {
     console.log(' [SAIR] Ctrl+C ou ESC');
     console.log('='.repeat(70) + '\n');
 
-    let keyReleaseTimer = null;
+    const activeTimers = new Map();
+
+    const triggerKey = (keyId, player, bitMask) => {
+        if (player === 'p1') currentP1Mask |= bitMask;
+        else currentP2Mask |= bitMask;
+
+        sendDualMaskToFPGA(currentP1Mask, currentP2Mask);
+        renderConsoleStatus(currentP1Mask, currentP2Mask);
+
+        if (activeTimers.has(keyId)) {
+            clearTimeout(activeTimers.get(keyId));
+        }
+
+        // Janela de 450ms: cobre o intervalo do repeat-delay do Windows (250-400ms).
+        // Enquanto o usuário segura a tecla, os caracteres repetidos renovam este timer,
+        // mantendo o botão ligado sem engasgos ou solturas indesejadas.
+        const timer = setTimeout(() => {
+            if (player === 'p1') currentP1Mask &= ~bitMask;
+            else currentP2Mask &= ~bitMask;
+            activeTimers.delete(keyId);
+            sendDualMaskToFPGA(currentP1Mask, currentP2Mask);
+            renderConsoleStatus(currentP1Mask, currentP2Mask);
+        }, 450);
+
+        activeTimers.set(keyId, timer);
+    };
 
     process.stdin.on('keypress', (str, key) => {
         if (!key) return;
 
         if ((key.ctrl && key.name === 'c') || key.name === 'escape') {
+            for (const timer of activeTimers.values()) clearTimeout(timer);
+            activeTimers.clear();
             sendDualMaskToFPGA(0, 0);
             if (niosProcess) niosProcess.kill();
             process.exit(0);
         }
 
-        let p1 = currentP1Mask;
-        let p2 = currentP2Mask;
-
-        // Mapeamento P1
-        if (key.name === 'w') p1 |= BTN_UP;
-        else if (key.name === 's') p1 |= BTN_DOWN;
-        else if (key.name === 'a') p1 |= BTN_LEFT;
-        else if (key.name === 'd') p1 |= BTN_RIGHT;
-        else if (key.name === 'k') p1 |= BTN_A;
-        else if (key.name === 'j') p1 |= BTN_B;
-        else if (key.name === 'return') p1 |= BTN_START;
-        else if (key.name === 'u') p1 |= BTN_SELECT;
+        // Mapeamento P1 com chaveamento e decay independente por tecla
+        if (key.name === 'w') triggerKey('p1_w', 'p1', BTN_UP);
+        else if (key.name === 's') triggerKey('p1_s', 'p1', BTN_DOWN);
+        else if (key.name === 'a') triggerKey('p1_a', 'p1', BTN_LEFT);
+        else if (key.name === 'd') triggerKey('p1_d', 'p1', BTN_RIGHT);
+        else if (key.name === 'k') triggerKey('p1_k', 'p1', BTN_A);
+        else if (key.name === 'j') triggerKey('p1_j', 'p1', BTN_B);
+        else if (key.name === 'return') triggerKey('p1_ret', 'p1', BTN_START);
+        else if (key.name === 'u') triggerKey('p1_u', 'p1', BTN_SELECT);
 
         // Mapeamento P2
-        if (key.name === 'up') p2 |= BTN_UP;
-        else if (key.name === 'down') p2 |= BTN_DOWN;
-        else if (key.name === 'left') p2 |= BTN_LEFT;
-        else if (key.name === 'right') p2 |= BTN_RIGHT;
-        else if (key.name === 'x') p2 |= BTN_A;
-        else if (key.name === 'z') p2 |= BTN_B;
-
-        sendDualMaskToFPGA(p1, p2);
-        renderConsoleStatus(p1, p2);
-
-        clearTimeout(keyReleaseTimer);
-        keyReleaseTimer = setTimeout(() => {
-            sendDualMaskToFPGA(0, 0);
-            renderConsoleStatus(0, 0);
-        }, 120);
+        if (key.name === 'up') triggerKey('p2_up', 'p2', BTN_UP);
+        else if (key.name === 'down') triggerKey('p2_down', 'p2', BTN_DOWN);
+        else if (key.name === 'left') triggerKey('p2_left', 'p2', BTN_LEFT);
+        else if (key.name === 'right') triggerKey('p2_right', 'p2', BTN_RIGHT);
+        else if (key.name === 'x') triggerKey('p2_x', 'p2', BTN_A);
+        else if (key.name === 'z') triggerKey('p2_z', 'p2', BTN_B);
     });
 }
 

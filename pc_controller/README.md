@@ -13,12 +13,25 @@ Suporte a **2 controles independentes** para jogos multiplayer no emulador NES r
 
 ---
 
-## 1. Como Usar a Interface Web (Navegador)
+## 1. Como Usar (Inicialização Rápida via `.bat`)
 
-1. No terminal:
+Você pode iniciar qualquer um dos controladores dando **dois cliques** nos arquivos `.bat`:
+
+- **Servidor Web & Node.js (Recomendado):** Dê dois cliques em [`run_web_controller.bat`](file:///C:/HDL/t4/NES-FPGA/run_web_controller.bat) na raiz do projeto (ou [`pc_controller/run_web.bat`](file:///C:/HDL/t4/NES-FPGA/pc_controller/run_web.bat)).
+  - Inicia o servidor local na porta 8080.
+  - Abre automaticamente o navegador padrão em `http://localhost:8080`.
+  - Suporta troca de cartuchos 1-Click e botões hold nativos.
+- **Console Python:** Dê dois cliques em [`run_python_controller.bat`](file:///C:/HDL/t4/NES-FPGA/run_python_controller.bat) na raiz do projeto (ou [`pc_controller/run_python.bat`](file:///C:/HDL/t4/NES-FPGA/pc_controller/run_python.bat)).
+  - Leitura física contínua a 60 FPS via Win32 (`GetAsyncKeyState`).
+  - Suporte total a teclas simultâneas e pressão contínua (hold) sem engasgos.
+
+---
+
+## 2. Como Usar a Interface Web (Navegador)
+
+1. No terminal ou via script:
    ```bash
-   cd C:\HDL\t4\NES-FPGA\pc_controller
-   node nes_controller.js
+   run_web_controller.bat
    ```
 2. Abra seu navegador em:
    ```
@@ -26,12 +39,13 @@ Suporte a **2 controles independentes** para jogos multiplayer no emulador NES r
    ```
 3. Na interface:
    - Você verá os dois controles do NES (P1 e P2).
-   - Clique em **"⚙️ Configurar Teclas & Controles"** para mudar qualquer tecla: basta clicar no botão da ação e apertar a nova tecla do seu teclado!
+   - Clique em **"⚙️ Teclas"** para mudar qualquer tecla: basta clicar no botão da ação e apertar a nova tecla do seu teclado!
    - Defina qual dispositivo controla qual jogador (Teclado, Gamepad 1, Gamepad 2 ou ambos).
+   - Utilize a barra superior de cartuchos para selecionar entre os 57 jogos NROM compatíveis e gravar diretamente na placa via botão **"⚡ Gravar FPGA"**.
 
 ---
 
-## 2. Mapeamento de Teclas Padrão no Mesmo Teclado
+## 3. Mapeamento de Teclas Padrão no Mesmo Teclado
 
 ### Player 1 (Mão Esquerda)
 | Botão do NES | Tecla Padrão |

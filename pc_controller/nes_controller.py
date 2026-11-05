@@ -116,23 +116,38 @@ def run_interactive_controller():
     running = True
 
     if os.name == 'nt':
-        import msvcrt
+        import ctypes
+        user32 = ctypes.windll.user32
 
-        P1_KEY_MAP = {
-            b'w': BTN_UP, b'W': BTN_UP,
-            b's': BTN_DOWN, b'S': BTN_DOWN,
-            b'a': BTN_LEFT, b'A': BTN_LEFT,
-            b'd': BTN_RIGHT, b'D': BTN_RIGHT,
-            b'k': BTN_A, b'K': BTN_A,
-            b'j': BTN_B, b'J': BTN_B,
-            b'\r': BTN_START,
-            b'u': BTN_SELECT, b'U': BTN_SELECT
-        }
+        # Virtual Key Codes (Win32) para leitura de hardware contínua a 60Hz
+        # Player 1: WASD + K(A) + J(B) + Enter(Start) + U(Select)
+        VK_W = 0x57
+        VK_S = 0x53
+        VK_A = 0x41
+        VK_D = 0x44
+        VK_K = 0x4B
+        VK_J = 0x4A
+        VK_RETURN = 0x0D
+        VK_U = 0x55
 
-        P2_KEY_MAP = {
-            b'x': BTN_A, b'X': BTN_A,
-            b'z': BTN_B, b'Z': BTN_B
-        }
+        # Player 2: Setas + X/Numpad2(A) + Z/Numpad1(B) + Numpad5(Start) + Numpad4(Select)
+        VK_UP = 0x26
+        VK_DOWN = 0x28
+        VK_LEFT = 0x25
+        VK_RIGHT = 0x27
+        VK_X = 0x58
+        VK_Z = 0x5A
+        VK_NUMPAD1 = 0x61
+        VK_NUMPAD2 = 0x62
+        VK_NUMPAD4 = 0x64
+        VK_NUMPAD5 = 0x65
+
+        VK_ESCAPE = 0x1B
+        VK_Q = 0x51
+
+        def is_key_down(vk: int) -> bool:
+            """Retorna True se a tecla física estiver pressionada no hardware."""
+            return bool(user32.GetAsyncKeyState(vk) & 0x8000)
 
         def render_status(p1: int, p2: int):
             def f(mask, btn, name):
@@ -141,45 +156,45 @@ def run_interactive_controller():
             sys.stdout.write(txt)
             sys.stdout.flush()
 
-        last_key_time = time.time()
+        last_p1 = -1
+        last_p2 = -1
 
         try:
             while running:
-                if msvcrt.kbhit():
-                    ch = msvcrt.getch()
-                    if ch in (b'\x1b', b'q', b'Q'):
-                        break
+                # Sair se ESC ou Q pressionados
+                if is_key_down(VK_ESCAPE) or is_key_down(VK_Q):
+                    break
 
-                    if ch in (b'\x00', b'\xe0'):
-                        code = msvcrt.getch()
-                        arrow_map = {
-                            b'H': BTN_UP,
-                            b'P': BTN_DOWN,
-                            b'K': BTN_LEFT,
-                            b'M': BTN_RIGHT
-                        }
-                        if code in arrow_map:
-                            p2_mask |= arrow_map[code]
-                            last_key_time = time.time()
-                    elif ch in P1_KEY_MAP:
-                        p1_mask |= P1_KEY_MAP[ch]
-                        last_key_time = time.time()
-                    elif ch in P2_KEY_MAP:
-                        p2_mask |= P2_KEY_MAP[ch]
-                        last_key_time = time.time()
+                # Leitura direta do estado físico de cada botão (suporta teclas simultâneas e hold)
+                p1 = 0
+                if is_key_down(VK_W): p1 |= BTN_UP
+                if is_key_down(VK_S): p1 |= BTN_DOWN
+                if is_key_down(VK_A): p1 |= BTN_LEFT
+                if is_key_down(VK_D): p1 |= BTN_RIGHT
+                if is_key_down(VK_K): p1 |= BTN_A
+                if is_key_down(VK_J): p1 |= BTN_B
+                if is_key_down(VK_RETURN): p1 |= BTN_START
+                if is_key_down(VK_U): p1 |= BTN_SELECT
 
+                p2 = 0
+                if is_key_down(VK_UP): p2 |= BTN_UP
+                if is_key_down(VK_DOWN): p2 |= BTN_DOWN
+                if is_key_down(VK_LEFT): p2 |= BTN_LEFT
+                if is_key_down(VK_RIGHT): p2 |= BTN_RIGHT
+                if is_key_down(VK_X) or is_key_down(VK_NUMPAD2): p2 |= BTN_A
+                if is_key_down(VK_Z) or is_key_down(VK_NUMPAD1): p2 |= BTN_B
+                if is_key_down(VK_NUMPAD5): p2 |= BTN_START
+                if is_key_down(VK_NUMPAD4): p2 |= BTN_SELECT
+
+                # Envia atualização apenas quando houver mudança de estado (taxa de amostragem: ~60-100 Hz)
+                if p1 != last_p1 or p2 != last_p2:
                     if has_bridge:
-                        bridge.send_dual_mask(p1_mask, p2_mask)
-                    render_status(p1_mask, p2_mask)
+                        bridge.send_dual_mask(p1, p2)
+                    render_status(p1, p2)
+                    last_p1 = p1
+                    last_p2 = p2
 
-                if (p1_mask != 0 or p2_mask != 0) and (time.time() - last_key_time > 0.12):
-                    p1_mask = 0
-                    p2_mask = 0
-                    if has_bridge:
-                        bridge.send_dual_mask(0, 0)
-                    render_status(0, 0)
-
-                time.sleep(0.01)
+                time.sleep(0.016)  # ~60 FPS
 
         except KeyboardInterrupt:
             pass

@@ -335,6 +335,14 @@ window.addEventListener('keyup', (e) => {
     pressedPhysicalKeys.delete(e.code);
 });
 
+// Limpa estado se a janela do navegador perder o foco (ex: Alt+Tab)
+window.addEventListener('blur', () => {
+    pressedPhysicalKeys.clear();
+    p1TouchButtons.clear();
+    p2TouchButtons.clear();
+    broadcastDualMask(0, 0);
+});
+
 /**
  * Eventos nos Botões Virtuais (Mouse e Touch)
  */
