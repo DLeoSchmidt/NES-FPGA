@@ -1,36 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-NES-FPGA PC Controller (Python Edition)
-=======================================
-Envia o estado das teclas do teclado do PC para o emulador NES rodando no FPGA
-atraves da interface JTAG UART (cabo USB-Blaster de programacao do .sof).
+NES-FPGA Dual Controller PC Bridge (Python Edition)
+===================================================
+Envia o estado dos dois controles (Player 1 e Player 2) para o emulador NES
+na FPGA atraves da interface JTAG UART (cabo USB-Blaster).
 
-Protocolo de Comunicacao:
+Protocolo:
   - Byte 0 (Sync): 0x5A
-  - Byte 1 (Mascara 8-bits):
-      Bit 7: A
-      Bit 6: B
-      Bit 5: SELECT
-      Bit 4: START
-      Bit 3: UP
-      Bit 2: DOWN
-      Bit 1: LEFT
-      Bit 0: RIGHT
-
-Mapeamento Padrao de Teclas:
-  - D-Pad:  W (Cima), S (Baixo), A (Esquerda), D (Direita)  [ou Setas]
-  - Acao:   K (Botao A), J (Botao B)
-  - Menu:   Enter (Start), Shift Direito ou U (Select)
-  - Sair:   Escape ou Ctrl+C
+  - Byte 1: Mascara 8-bits Player 1 (A, B, Select, Start, Up, Down, Left, Right)
+  - Byte 2: Mascara 8-bits Player 2 (mesmo formato)
 """
 
 import sys
 import os
 import time
 import subprocess
-import threading
-from typing import Optional, Dict
+from typing import Optional
 
 # Mascaras de Bits para o Controle NES
 BTN_RIGHT  = 1 << 0
@@ -45,27 +31,21 @@ BTN_A      = 1 << 7
 SYNC_BYTE = 0x5A
 
 class NiosTerminalBridge:
-    """Gerencia o processo nios2-terminal da Intel/Altera para transmissao JTAG UART."""
-    
     def __init__(self, terminal_path: Optional[str] = None):
         self.terminal_path = terminal_path or self._find_nios2_terminal()
         self.process: Optional[subprocess.Popen] = None
         self.connected = False
 
     def _find_nios2_terminal(self) -> str:
-        """Localiza o executavel nios2-terminal.exe nos caminhos padroes ou no PATH."""
-        # 1. Checa PATH do sistema
         import shutil
         found = shutil.which("nios2-terminal")
         if found:
             return found
 
-        # 2. Caminhos conhecidos de instalacoes Altera / IntelFPGA
         search_roots = [
             r"C:\altera",
             r"C:\intelFPGA",
             r"C:\intelFPGA_lite",
-            r"C:\intelFPGA_pro",
             os.environ.get("QUARTUS_ROOTDIR", "")
         ]
 
@@ -80,10 +60,9 @@ class NiosTerminalBridge:
         return "nios2-terminal"
 
     def connect(self) -> bool:
-        """Inicia o processo nios2-terminal com pipes stdin/stdout."""
         cmd = [self.terminal_path]
         try:
-            print(f"[BRIDGE] Iniciando processo: {self.terminal_path}")
+            print(f"[BRIDGE] Conectando ao FPGA via: {self.terminal_path}")
             self.process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
@@ -92,32 +71,25 @@ class NiosTerminalBridge:
                 bufsize=0
             )
             self.connected = True
-            print("[BRIDGE] Conexao com JTAG UART estabelecida com sucesso.")
+            print("[BRIDGE] Canal JTAG UART ativo.")
             return True
-        except FileNotFoundError:
-            print(f"[ERRO] Executavel '{self.terminal_path}' nao encontrado.")
-            print("[DICA] Certifique-se de que o Quartus/Nios II EDS esteja instalado e no PATH.")
-            return False
         except Exception as ex:
-            print(f"[ERRO] Falha ao iniciar nios2-terminal: {ex}")
+            print(f"[AVISO] nios2-terminal nao iniciado ({ex}). Modo de teste de console ativo.")
             return False
 
-    def send_mask(self, mask: int) -> bool:
-        """Transmite o frame de 2 bytes [0x5A, mask] via JTAG UART."""
+    def send_dual_mask(self, p1: int, p2: int) -> bool:
         if not self.connected or not self.process or not self.process.stdin:
             return False
         try:
-            packet = bytes([SYNC_BYTE, mask & 0xFF])
+            packet = bytes([SYNC_BYTE, p1 & 0xFF, p2 & 0xFF])
             self.process.stdin.write(packet)
             self.process.stdin.flush()
             return True
-        except Exception as ex:
-            print(f"[BRIDGE] Erro de envio: {ex}")
+        except Exception:
             self.connected = False
             return False
 
     def close(self):
-        """Fecha a conexao e encerra o processo."""
         if self.process:
             try:
                 self.process.terminate()
@@ -128,69 +100,57 @@ class NiosTerminalBridge:
 
 
 def run_interactive_controller():
-    """Captura teclas do teclado no console e transmite o estado ao FPGA."""
     bridge = NiosTerminalBridge()
     has_bridge = bridge.connect()
 
-    if not has_bridge:
-        print("\n[AVISO] Executando em modo simulacao de console (sem nios2-terminal ativo).")
+    print("\n" + "=" * 70)
+    print("      NES-FPGA DUAL CONTROLLER - PYTHON CONSOLE EDITION      ")
+    print("=" * 70)
+    print(" Player 1: WASD (Direcional) | K (A) | J (B) | Enter (Start) | U (Select)")
+    print(" Player 2: Setas (Direcional) | X (A) | Z (B)")
+    print(" Sair: ESC ou Q")
+    print("=" * 70 + "\n")
 
-    print("\n" + "=" * 65)
-    print("      NES-FPGA CONTROLLER - PYTHON CONSOLE EDITION      ")
-    print("=" * 65)
-    print(" Controles do NES:")
-    print("   [W / S / A / D] -> Cima / Baixo / Esquerda / Direita")
-    print("   [K]             -> Botao A")
-    print("   [J]             -> Botao B")
-    print("   [Enter]         -> Start")
-    print("   [U]             -> Select")
-    print("   [ESC] ou [Q]    -> Sair")
-    print("=" * 65 + "\n")
-
-    current_mask = 0
+    p1_mask = 0
+    p2_mask = 0
     running = True
 
-    # Suporte nativo para Windows via msvcrt
     if os.name == 'nt':
         import msvcrt
 
-        # Mapeamento de teclas para Windows console
-        KEY_MAP = {
-            b'w': (BTN_UP, True),    b'W': (BTN_UP, True),
-            b's': (BTN_DOWN, True),  b'S': (BTN_DOWN, True),
-            b'a': (BTN_LEFT, True),  b'A': (BTN_LEFT, True),
-            b'd': (BTN_RIGHT, True), b'D': (BTN_RIGHT, True),
-            b'k': (BTN_A, True),     b'K': (BTN_A, True),
-            b'j': (BTN_B, True),     b'J': (BTN_B, True),
-            b'\r': (BTN_START, True),# Enter
-            b'u': (BTN_SELECT, True),b'U': (BTN_SELECT, True),
+        P1_KEY_MAP = {
+            b'w': BTN_UP, b'W': BTN_UP,
+            b's': BTN_DOWN, b'S': BTN_DOWN,
+            b'a': BTN_LEFT, b'A': BTN_LEFT,
+            b'd': BTN_RIGHT, b'D': BTN_RIGHT,
+            b'k': BTN_A, b'K': BTN_A,
+            b'j': BTN_B, b'J': BTN_B,
+            b'\r': BTN_START,
+            b'u': BTN_SELECT, b'U': BTN_SELECT
         }
 
-        def render_status(mask: int):
-            states = [
-                f"UP:{'ON ' if mask & BTN_UP else 'OFF'}",
-                f"DOWN:{'ON ' if mask & BTN_DOWN else 'OFF'}",
-                f"LEFT:{'ON ' if mask & BTN_LEFT else 'OFF'}",
-                f"RIGHT:{'ON ' if mask & BTN_RIGHT else 'OFF'}",
-                f"A:{'ON ' if mask & BTN_A else 'OFF'}",
-                f"B:{'ON ' if mask & BTN_B else 'OFF'}",
-                f"START:{'ON ' if mask & BTN_START else 'OFF'}",
-                f"SELECT:{'ON ' if mask & BTN_SELECT else 'OFF'}"
-            ]
-            sys.stdout.write("\r[" + " | ".join(states) + "]")
+        P2_KEY_MAP = {
+            b'x': BTN_A, b'X': BTN_A,
+            b'z': BTN_B, b'Z': BTN_B
+        }
+
+        def render_status(p1: int, p2: int):
+            def f(mask, btn, name):
+                return f"{name}:{'ON ' if mask & btn else 'OFF'}"
+            txt = f"\r[P1: {f(p1, BTN_UP, 'U')} {f(p1, BTN_DOWN, 'D')} {f(p1, BTN_LEFT, 'L')} {f(p1, BTN_RIGHT, 'R')} | A:{'1' if p1 & BTN_A else '0'} B:{'1' if p1 & BTN_B else '0'}] [P2: {f(p2, BTN_UP, 'U')} {f(p2, BTN_DOWN, 'D')} {f(p2, BTN_LEFT, 'L')} {f(p2, BTN_RIGHT, 'R')} | A:{'1' if p2 & BTN_A else '0'} B:{'1' if p2 & BTN_B else '0'}]"
+            sys.stdout.write(txt)
             sys.stdout.flush()
 
-        # Temporizador para limpar automaticamente botoes acionados por press unico
         last_key_time = time.time()
 
         try:
             while running:
                 if msvcrt.kbhit():
                     ch = msvcrt.getch()
-                    if ch in (b'\x1b', b'q', b'Q'): # ESC ou Q
+                    if ch in (b'\x1b', b'q', b'Q'):
                         break
-                    
-                    if ch in (b'\x00', b'\xe0'): # Teclas de seta especiais
+
+                    if ch in (b'\x00', b'\xe0'):
                         code = msvcrt.getch()
                         arrow_map = {
                             b'H': BTN_UP,
@@ -199,23 +159,25 @@ def run_interactive_controller():
                             b'M': BTN_RIGHT
                         }
                         if code in arrow_map:
-                            current_mask |= arrow_map[code]
+                            p2_mask |= arrow_map[code]
                             last_key_time = time.time()
-                    elif ch in KEY_MAP:
-                        btn, _ = KEY_MAP[ch]
-                        current_mask |= btn
+                    elif ch in P1_KEY_MAP:
+                        p1_mask |= P1_KEY_MAP[ch]
+                        last_key_time = time.time()
+                    elif ch in P2_KEY_MAP:
+                        p2_mask |= P2_KEY_MAP[ch]
                         last_key_time = time.time()
 
                     if has_bridge:
-                        bridge.send_mask(current_mask)
-                    render_status(current_mask)
+                        bridge.send_dual_mask(p1_mask, p2_mask)
+                    render_status(p1_mask, p2_mask)
 
-                # Reset automatico dos botoes se nenhuma tecla for recebida por 120ms
-                if current_mask != 0 and (time.time() - last_key_time > 0.12):
-                    current_mask = 0
+                if (p1_mask != 0 or p2_mask != 0) and (time.time() - last_key_time > 0.12):
+                    p1_mask = 0
+                    p2_mask = 0
                     if has_bridge:
-                        bridge.send_mask(current_mask)
-                    render_status(current_mask)
+                        bridge.send_dual_mask(0, 0)
+                    render_status(0, 0)
 
                 time.sleep(0.01)
 
@@ -223,12 +185,9 @@ def run_interactive_controller():
             pass
         finally:
             if has_bridge:
-                bridge.send_mask(0)
+                bridge.send_dual_mask(0, 0)
                 bridge.close()
-            print("\n[INFO] Sessao do controlador encerrada.")
-
-    else:
-        print("[INFO] Modo interativo avancado disponivel no Windows/Linux.")
+            print("\n[INFO] Sessao finalizada.")
 
 
 if __name__ == "__main__":

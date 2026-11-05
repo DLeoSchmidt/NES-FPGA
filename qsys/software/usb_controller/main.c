@@ -1,6 +1,15 @@
-// ECE 385 USB Host Shield code + NES-FPGA PC Controller Bridge via JTAG UART
-// Based on Circuits-at-home USB Host code 1.x & NES-FPGA by Ian Dailis
-// Enhanced to support PC Keyboard/Gamepad input concurrently with USB Host Shield.
+// =============================================================================
+// NES-FPGA Dual Controller Driver & JTAG UART Bridge (Player 1 + Player 2)
+// =============================================================================
+// Suporte concorrente a:
+//   1. Teclado USB físico via Shield MAX3421E (atribuído ao Player 1).
+//   2. PC Controller via JTAG UART (Player 1 e Player 2 independentes).
+//
+// Protocolo JTAG UART (3 bytes):
+//   Byte 0: 0x5A (Sync Header)
+//   Byte 1: Máscara 8-bits do Player 1 (A, B, Select, Start, Up, Down, Left, Right)
+//   Byte 2: Máscara 8-bits do Player 2 (mesmo formato)
+// =============================================================================
 
 #include <stdio.h>
 #include "system.h"
@@ -23,17 +32,7 @@ static BYTE addr = 1; 				// hard-wired USB address
 const char* const devclasses[] = { " Uninitialized", " HID Keyboard", " HID Mouse", " Mass storage" };
 
 /* =========================================================================
- * PROTOCOLO DO CONTROLE DE NES & MAPEAMENTO DE TECLAS
- * =========================================================================
- * Máscara de bits unificada (8 bits):
- *   Bit 0: RIGHT   (D-Pad Direita) -> Scancode 0x07 ('D')
- *   Bit 1: LEFT    (D-Pad Esquerda) -> Scancode 0x04 ('A')
- *   Bit 2: DOWN    (D-Pad Baixo)    -> Scancode 0x16 ('S')
- *   Bit 3: UP      (D-Pad Cima)     -> Scancode 0x1A ('W')
- *   Bit 4: START   (Botão Start)    -> Scancode 0x0B ('H')
- *   Bit 5: SELECT  (Botão Select)   -> Scancode 0x0A ('G')
- *   Bit 6: B       (Botão B)        -> Scancode 0x0E ('K')
- *   Bit 7: A       (Botão A)        -> Scancode 0x0F ('L')
+ * PROTOCOLO DO CONTROLE DE NES & MAPEAMENTO DE BITS
  * ========================================================================= */
 #define NES_BTN_RIGHT   (1 << 0)
 #define NES_BTN_LEFT    (1 << 1)
@@ -53,12 +52,12 @@ const char* const devclasses[] = { " Uninitialized", " HID Keyboard", " HID Mous
 #define HID_CODE_B      0x0E
 #define HID_CODE_A      0x0F
 
-/* Protocolo JTAG UART: Byte de sincronismo seguido pelo byte da máscara */
 #define JTAG_SYNC_HEADER 0x5A
 
-static volatile alt_u8 g_pc_buttons_mask = 0;   // Máscara recebida do PC via JTAG UART
-static volatile alt_u8 g_usb_buttons_mask = 0;  // Máscara extraída do teclado USB físico
-static alt_u8 g_jtag_state = 0;                // 0 = Aguardando 0x5A, 1 = Aguardando máscara
+static volatile alt_u8 g_pc_p1_mask  = 0;   // Player 1 vindo do PC
+static volatile alt_u8 g_pc_p2_mask  = 0;   // Player 2 vindo do PC
+static volatile alt_u8 g_usb_p1_mask = 0;   // Player 1 vindo do Teclado USB físico
+static alt_u8 g_jtag_state = 0;             // 0 = Sync (0x5A), 1 = P1, 2 = P2
 
 BYTE GetDriverandReport() {
 	BYTE i;
@@ -155,91 +154,60 @@ void printSignedHex1(signed char value) {
 	IOWR_ALTERA_AVALON_PIO_DATA(HEX_BASE, pio_val);
 }
 
-void setKeycode(alt_u32 keycode)
-{
-	IOWR_ALTERA_AVALON_PIO_DATA(KEYCODE_BASE, keycode);
-}
-
 /* =========================================================================
- * Leitura Não-Bloqueante da FIFO de Recepção da JTAG UART
- * =========================================================================
- * Processa pacotes binários do PC [0x5A, <mask_byte>] sem interromper ou
- * atrasar o processamento do USB Host Shield ou o ciclo de jogo do NES.
+ * Polling Não-Bloqueante da JTAG UART (Recepção Dual Controller P1 + P2)
  * ========================================================================= */
 static void poll_jtag_uart(void) {
 	while (1) {
 		alt_u32 jtag_data = IORD_ALTERA_AVALON_JTAG_UART_DATA(JTAG_UART_0_BASE);
 		if (!(jtag_data & ALTERA_AVALON_JTAG_UART_DATA_RVALID_MSK)) {
-			// Não há mais bytes no buffer da JTAG UART
 			break;
 		}
 
 		alt_u8 rx_byte = (alt_u8)(jtag_data & ALTERA_AVALON_JTAG_UART_DATA_DATA_MSK);
 
-		if (g_jtag_state == 0) {
-			if (rx_byte == JTAG_SYNC_HEADER) {
-				g_jtag_state = 1;
-			}
-		} else {
-			// Segundo byte: máscara dos botões
-			g_pc_buttons_mask = rx_byte;
-			g_jtag_state = 0;
+		switch (g_jtag_state) {
+			case 0: // Aguardando Byte de Sincronismo (0x5A)
+				if (rx_byte == JTAG_SYNC_HEADER) {
+					g_jtag_state = 1;
+				}
+				break;
+
+			case 1: // Recebendo Máscara do Player 1
+				g_pc_p1_mask = rx_byte;
+				g_jtag_state = 2;
+				break;
+
+			case 2: // Recebendo Máscara do Player 2
+				g_pc_p2_mask = rx_byte;
+				g_jtag_state = 0; // Concluído, pronto para próximo pacote
+				break;
+
+			default:
+				g_jtag_state = 0;
+				break;
 		}
 	}
 }
 
 /* =========================================================================
- * Síntese e Fusão de Entradas (Merge de Teclado Físico + Teclado do PC)
+ * Atualização dos Registradores de Entrada dos Controles (P1 e P2)
  * =========================================================================
- * Combina os botões do teclado USB físico no shield com os botões do PC.
- * Empacota os scancodes correspondentes nos 4 slots do registrador de 32 bits
- * esperado pelo módulo SystemVerilog 'controller.sv'.
+ *   keycode[7:0]   -> Player 1 (União de Teclado Físico USB + PC P1)
+ *   keycode[15:8]  -> Player 2 (PC P2)
+ *   keycode[31:16] -> 0x0000 (Sinaliza modo Dual Mask ao controller.sv)
  * ========================================================================= */
-static void update_combined_keycode(volatile unsigned int* keycode_pio) {
-	alt_u8 combined_mask = g_usb_buttons_mask | g_pc_buttons_mask;
-	alt_u32 synthesized_keycode = 0;
-	int slot = 0;
+static void update_dual_keycodes(volatile unsigned int* keycode_pio) {
+	alt_u8 final_p1 = g_usb_p1_mask | g_pc_p1_mask;
+	alt_u8 final_p2 = g_pc_p2_mask;
 
-	// Preenche os 4 bytes do registrador keycode (keycode[31:24], [23:16], [15:8], [7:0])
-	// O módulo controller.sv aceita o scancode em qualquer um dos 4 bytes.
-	if ((combined_mask & NES_BTN_A) && slot < 4) {
-		synthesized_keycode |= ((alt_u32)HID_CODE_A << (slot * 8));
-		slot++;
-	}
-	if ((combined_mask & NES_BTN_B) && slot < 4) {
-		synthesized_keycode |= ((alt_u32)HID_CODE_B << (slot * 8));
-		slot++;
-	}
-	if ((combined_mask & NES_BTN_UP) && slot < 4) {
-		synthesized_keycode |= ((alt_u32)HID_CODE_UP << (slot * 8));
-		slot++;
-	}
-	if ((combined_mask & NES_BTN_DOWN) && slot < 4) {
-		synthesized_keycode |= ((alt_u32)HID_CODE_DOWN << (slot * 8));
-		slot++;
-	}
-	if ((combined_mask & NES_BTN_LEFT) && slot < 4) {
-		synthesized_keycode |= ((alt_u32)HID_CODE_LEFT << (slot * 8));
-		slot++;
-	}
-	if ((combined_mask & NES_BTN_RIGHT) && slot < 4) {
-		synthesized_keycode |= ((alt_u32)HID_CODE_RIGHT << (slot * 8));
-		slot++;
-	}
-	if ((combined_mask & NES_BTN_START) && slot < 4) {
-		synthesized_keycode |= ((alt_u32)HID_CODE_START << (slot * 8));
-		slot++;
-	}
-	if ((combined_mask & NES_BTN_SELECT) && slot < 4) {
-		synthesized_keycode |= ((alt_u32)HID_CODE_SELECT << (slot * 8));
-		slot++;
-	}
+	alt_u32 combined_word = ((alt_u32)final_p2 << 8) | (alt_u32)final_p1;
 
-	*keycode_pio = synthesized_keycode;
+	*keycode_pio = combined_word;
 
-	// Atualiza os displays de 7 segmentos para debug visual imediato
-	printSignedHex0((signed char)(synthesized_keycode & 0xFF));
-	printSignedHex1((signed char)((synthesized_keycode >> 8) & 0xFF));
+	// Exibe o estado nos displays HEX para feedback em tempo real
+	printSignedHex0((signed char)final_p1);
+	printSignedHex1((signed char)final_p2);
 }
 
 int main() {
@@ -251,17 +219,15 @@ int main() {
 	BYTE runningdebugflag = 0;
 	BYTE errorflag = 0;
 	BYTE device = 0;
-	unsigned int loop_counter = 0;
 
-	printf("NES-FPGA Controller Bridge Initializing...\n");
-	printf("MAX3421E USB Host + JTAG UART PC Bridge ready.\n");
+	printf("NES-FPGA Dual Controller Bridge Ready (P1 + P2)\n");
 
 	// Inicializa o chip USB MAX3421E
 	MAX3421E_init();
 	USB_init();
 
 	while (1) {
-		// 1. Polling da JTAG UART com prioridade máxima (baixa latência para o PC)
+		// 1. Polling prioritário de alta frequência da JTAG UART
 		poll_jtag_uart();
 
 		// 2. Tarefas do USB Host Shield (MAX3421E)
@@ -274,10 +240,9 @@ int main() {
 				setLED(9);
 				device = GetDriverandReport();
 			} else if (device == 1) {
-				// Teclado USB físico conectado ao shield
+				// Teclado USB físico conectado ao shield (Player 1)
 				rcode = kbdPoll(&kbdbuf);
 				if (rcode == hrSUCCESS) {
-					// Extrai máscara dos botões físicos a partir dos scancodes HID
 					alt_u8 physical_mask = 0;
 					for (int i = 0; i < 6; i++) {
 						BYTE kc = kbdbuf.keycode[i];
@@ -290,10 +255,10 @@ int main() {
 						else if (kc == HID_CODE_START) physical_mask |= NES_BTN_START;
 						else if (kc == HID_CODE_SELECT) physical_mask |= NES_BTN_SELECT;
 					}
-					g_usb_buttons_mask = physical_mask;
+					g_usb_p1_mask = physical_mask;
 				}
 			} else if (device == 2) {
-				// Mouse USB (preservado do código original)
+				// Mouse USB preservado
 				rcode = mousePoll(&buf);
 				if (rcode == hrSUCCESS) {
 					if (buf.button & 0x04) setLED(2); else clearLED(2);
@@ -305,9 +270,8 @@ int main() {
 			if (!errorflag) {
 				errorflag = 1;
 				clearLED(9);
-				printf("USB Shield Error/Not Connected (PC Controller remains active)\n");
 			}
-			g_usb_buttons_mask = 0; // Nenhum botão pressionado no shield ausente
+			g_usb_p1_mask = 0;
 		} else {
 			if (runningdebugflag) {
 				runningdebugflag = 0;
@@ -316,17 +280,11 @@ int main() {
 			}
 			errorflag = 0;
 			clearLED(9);
-			g_usb_buttons_mask = 0;
+			g_usb_p1_mask = 0;
 		}
 
-		// 3. Atualiza o PIO do NES com a união das entradas (PC + Teclado USB)
-		update_combined_keycode(keycode_pio);
-
-		// 4. Log periódico não-bloqueante (evita flood no canal serial)
-		loop_counter++;
-		if (loop_counter % 20000 == 0) {
-			// Mantém atividade sem saturar o JTAG UART
-		}
+		// 3. Atualiza os registradores dos 2 controles no hardware do NES
+		update_dual_keycodes(keycode_pio);
 	}
 	return 0;
 }

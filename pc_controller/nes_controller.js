@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 /**
- * NES-FPGA PC Controller (Node.js Edition & WebSocket Bridge Server)
- * ================================================================
- * Permite controlar o emulador de NES no FPGA de duas formas simultâneas:
- *   1. Diretamente pelo Terminal do Node.js (Raw keyboard events).
- *   2. Como Servidor HTTP/WebSocket local (porta 8080) para a interface Web.
+ * NES-FPGA Dual Controller PC Bridge (Node.js Edition & WebSocket Server)
+ * ======================================================================
+ * Permite controlar 2 jogadores independentes (Player 1 e Player 2) no NES-FPGA.
+ * Transmite o frame de 3 bytes [0x5A, mask_p1, mask_p2] via JTAG UART (nios2-terminal).
  * 
- * Transmite pacotes binários [0x5A, mask] via JTAG UART (nios2-terminal).
- * 
- * Dependências: ZERO! Utiliza 100% módulos nativos do Node.js (http, crypto, fs, path, child_process).
+ * Servidor Web nativo na porta 8080 para a interface HTML5.
+ * Zero dependências externas (100% bibliotecas padrão do Node.js).
  */
 
 const http = require('http');
@@ -18,7 +16,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const readline = require('readline');
 
-// Constantes do Protocolo do Controle NES (Máscara de 8 bits)
+// Constantes de Máscara de Bits (NES)
 const BTN_RIGHT  = 1 << 0;
 const BTN_LEFT   = 1 << 1;
 const BTN_DOWN   = 1 << 2;
@@ -33,12 +31,12 @@ const HTTP_PORT  = 8080;
 
 /** @type {import('child_process').ChildProcessWithoutNullStreams | null} */
 let niosProcess = null;
-let currentMask = 0;
+let currentP1Mask = 0;
+let currentP2Mask = 0;
 const wsClients = new Set();
 
 /**
  * Localiza o executável nios2-terminal nos caminhos comuns de instalação da Altera/Intel.
- * @returns {string} Caminho do executável ou comando padrão.
  */
 function findNiosTerminal() {
     const defaultRoots = [
@@ -74,9 +72,6 @@ function findNiosTerminal() {
     return 'nios2-terminal';
 }
 
-/**
- * Inicializa a comunicação com a interface JTAG UART através do nios2-terminal.
- */
 function initNiosBridge() {
     const cmd = findNiosTerminal();
     console.log(`[BRIDGE] Conectando ao FPGA via: ${cmd}`);
@@ -89,12 +84,8 @@ function initNiosBridge() {
 
         niosProcess.on('error', (err) => {
             console.warn(`[AVISO] nios2-terminal não pôde ser iniciado (${err.message}).`);
-            console.warn(`[AVISO] O servidor continuará em modo de simulação / monitor de eventos.`);
+            console.warn(`[AVISO] Servidor ativo em modo de simulação/Web.`);
             niosProcess = null;
-        });
-
-        niosProcess.stdout.on('data', (data) => {
-            // Repassa logs ou mensagens do Nios II se necessário
         });
 
         niosProcess.on('exit', (code) => {
@@ -110,28 +101,26 @@ function initNiosBridge() {
 }
 
 /**
- * Transmite a máscara de 8 bits do controle NES para o FPGA.
- * @param {number} mask 
+ * Transmite o frame de 3 bytes [0x5A, mask_p1, mask_p2] para o FPGA.
  */
-function sendMaskToFPGA(mask) {
-    currentMask = mask & 0xFF;
+function sendDualMaskToFPGA(p1, p2) {
+    currentP1Mask = p1 & 0xFF;
+    currentP2Mask = p2 & 0xFF;
+
     if (niosProcess && niosProcess.stdin && !niosProcess.stdin.destroyed) {
-        const packet = Buffer.from([SYNC_BYTE, currentMask]);
+        const packet = Buffer.from([SYNC_BYTE, currentP1Mask, currentP2Mask]);
         niosProcess.stdin.write(packet);
     }
 
-    // Notifica todos os clientes WebSocket conectados para sincronização visual
-    const statusPayload = JSON.stringify({ type: 'state', mask: currentMask });
+    // Sincroniza todos os clientes Web conectados
+    const statusPayload = JSON.stringify({ type: 'state2', p1: currentP1Mask, p2: currentP2Mask });
     for (const ws of wsClients) {
         sendWsText(ws, statusPayload);
     }
 }
 
-/**
- * Servidor HTTP para servir a aplicação Web estática (web/index.html, etc.)
- */
+// Servidor HTTP Estático
 const webDir = path.join(__dirname, 'web');
-
 const MIME_TYPES = {
     '.html': 'text/html',
     '.css': 'text/css',
@@ -143,7 +132,6 @@ const MIME_TYPES = {
 
 const server = http.createServer((req, res) => {
     let reqUrl = req.url === '/' ? '/index.html' : req.url;
-    // Sanitização de caminho contra Directory Traversal
     const safePath = path.normalize(reqUrl).replace(/^(\.\.[\/\\])+/, '');
     const filePath = path.join(webDir, safePath);
 
@@ -160,10 +148,8 @@ const server = http.createServer((req, res) => {
     });
 });
 
-/**
- * Implementação RFC 6455 de WebSocket Nativo (Zero dependências externas)
- */
-server.on('upgrade', (req, socket, head) => {
+// Servidor WebSocket Nativo (RFC 6455)
+server.on('upgrade', (req, socket) => {
     if (req.headers['upgrade'] !== 'websocket') {
         socket.destroy();
         return;
@@ -184,10 +170,9 @@ server.on('upgrade', (req, socket, head) => {
 
     socket.write(headers.join('\r\n') + '\r\n\r\n');
     wsClients.add(socket);
-    console.log(`[WS] Novo cliente Web conectado. Total: ${wsClients.size}`);
+    console.log(`[WS] Cliente Web conectado. Total: ${wsClients.size}`);
 
-    // Envia estado atual para o novo cliente
-    sendWsText(socket, JSON.stringify({ type: 'state', mask: currentMask }));
+    sendWsText(socket, JSON.stringify({ type: 'state2', p1: currentP1Mask, p2: currentP2Mask }));
 
     let frameBuffer = Buffer.alloc(0);
 
@@ -197,7 +182,6 @@ server.on('upgrade', (req, socket, head) => {
         while (frameBuffer.length >= 2) {
             const firstByte = frameBuffer[0];
             const secondByte = frameBuffer[1];
-
             const opcode = firstByte & 0x0F;
             const isMasked = (secondByte & 0x80) !== 0;
             let payloadLen = secondByte & 0x7F;
@@ -220,7 +204,7 @@ server.on('upgrade', (req, socket, head) => {
                 offset += 4;
             }
 
-            if (frameBuffer.length < offset + payloadLen) break; // Frame incompleto
+            if (frameBuffer.length < offset + payloadLen) break;
 
             let payload = frameBuffer.slice(offset, offset + payloadLen);
             frameBuffer = frameBuffer.slice(offset + payloadLen);
@@ -231,21 +215,19 @@ server.on('upgrade', (req, socket, head) => {
                 }
             }
 
-            // Tratamento de Opcode
             if (opcode === 0x08) {
-                // Close frame
                 socket.end();
                 break;
             } else if (opcode === 0x01) {
-                // Text frame
-                const message = payload.toString('utf-8');
                 try {
-                    const data = JSON.parse(message);
-                    if (data.type === 'mask' && typeof data.mask === 'number') {
-                        sendMaskToFPGA(data.mask);
+                    const data = JSON.parse(payload.toString('utf-8'));
+                    if (data.type === 'mask2') {
+                        sendDualMaskToFPGA(data.p1 || 0, data.p2 || 0);
+                    } else if (data.type === 'mask') {
+                        sendDualMaskToFPGA(data.mask || 0, currentP2Mask);
                     }
                 } catch {
-                    // Ignora pacotes JSON inválidos
+                    // Ignora pacotes corrompidos
                 }
             }
         }
@@ -261,11 +243,6 @@ server.on('upgrade', (req, socket, head) => {
     });
 });
 
-/**
- * Envia um frame de texto WebSocket para o socket especificado.
- * @param {import('net').Socket} socket 
- * @param {string} text 
- */
 function sendWsText(socket, text) {
     if (socket.destroyed) return;
     const payload = Buffer.from(text, 'utf-8');
@@ -289,12 +266,12 @@ function sendWsText(socket, text) {
     try {
         socket.write(Buffer.concat([header, payload]));
     } catch {
-        // Ignora erros de socket fechado
+        // Ignora erros de socket
     }
 }
 
 /**
- * Mapeamento e Captura de Teclas Interativas no Terminal do Node.js
+ * Terminal Keyboard: suporta Player 1 e Player 2 no mesmo console
  */
 function setupTerminalKeyboard() {
     readline.emitKeypressEvents(process.stdin);
@@ -302,61 +279,64 @@ function setupTerminalKeyboard() {
         process.stdin.setRawMode(true);
     }
 
-    console.log('\n' + '='.repeat(68));
-    console.log('       NES-FPGA CONTROLLER - NODE.JS & WEB BRIDGE SERVER       ');
-    console.log('='.repeat(68));
+    console.log('\n' + '='.repeat(70));
+    console.log('       NES-FPGA DUAL CONTROLLER - NODE.JS & WEB BRIDGE SERVER       ');
+    console.log('='.repeat(70));
     console.log(` [WEB] Servidor Web ativo: http://localhost:${HTTP_PORT}`);
-    console.log(' [TERMINAL] Teclas disponíveis neste console:');
-    console.log('   W / S / A / D : Cima / Baixo / Esquerda / Direita');
-    console.log('   K / J         : Botão A / Botão B');
-    console.log('   Enter / U     : Start / Select');
-    console.log('   Ctrl+C ou ESC : Sair');
-    console.log('='.repeat(68) + '\n');
+    console.log(' [P1 - Teclado Console] WASD (Dir) | K (A) | J (B) | Enter (Start) | U (Sel)');
+    console.log(' [P2 - Teclado Console] Setas (Dir) | X (A) | Z (B) | Numpad5 | Numpad4');
+    console.log(' [SAIR] Ctrl+C ou ESC');
+    console.log('='.repeat(70) + '\n');
 
     let keyReleaseTimer = null;
 
     process.stdin.on('keypress', (str, key) => {
         if (!key) return;
 
-        // Saída segura
-        if (key.ctrl && key.name === 'c' || key.name === 'escape') {
-            sendMaskToFPGA(0);
+        if ((key.ctrl && key.name === 'c') || key.name === 'escape') {
+            sendDualMaskToFPGA(0, 0);
             if (niosProcess) niosProcess.kill();
             process.exit(0);
         }
 
-        let newMask = currentMask;
+        let p1 = currentP1Mask;
+        let p2 = currentP2Mask;
 
-        switch (key.name) {
-            case 'w': case 'up':    newMask |= BTN_UP; break;
-            case 's': case 'down':  newMask |= BTN_DOWN; break;
-            case 'a': case 'left':  newMask |= BTN_LEFT; break;
-            case 'd': case 'right': newMask |= BTN_RIGHT; break;
-            case 'k':               newMask |= BTN_A; break;
-            case 'j':               newMask |= BTN_B; break;
-            case 'return':          newMask |= BTN_START; break;
-            case 'u':               newMask |= BTN_SELECT; break;
-        }
+        // Mapeamento P1
+        if (key.name === 'w') p1 |= BTN_UP;
+        else if (key.name === 's') p1 |= BTN_DOWN;
+        else if (key.name === 'a') p1 |= BTN_LEFT;
+        else if (key.name === 'd') p1 |= BTN_RIGHT;
+        else if (key.name === 'k') p1 |= BTN_A;
+        else if (key.name === 'j') p1 |= BTN_B;
+        else if (key.name === 'return') p1 |= BTN_START;
+        else if (key.name === 'u') p1 |= BTN_SELECT;
 
-        sendMaskToFPGA(newMask);
-        renderConsoleStatus(currentMask);
+        // Mapeamento P2
+        if (key.name === 'up') p2 |= BTN_UP;
+        else if (key.name === 'down') p2 |= BTN_DOWN;
+        else if (key.name === 'left') p2 |= BTN_LEFT;
+        else if (key.name === 'right') p2 |= BTN_RIGHT;
+        else if (key.name === 'x') p2 |= BTN_A;
+        else if (key.name === 'z') p2 |= BTN_B;
 
-        // Limpa o estado após 120ms se não houver nova repetição de tecla (simula keyup)
+        sendDualMaskToFPGA(p1, p2);
+        renderConsoleStatus(p1, p2);
+
         clearTimeout(keyReleaseTimer);
         keyReleaseTimer = setTimeout(() => {
-            sendMaskToFPGA(0);
-            renderConsoleStatus(0);
+            sendDualMaskToFPGA(0, 0);
+            renderConsoleStatus(0, 0);
         }, 120);
     });
 }
 
-function renderConsoleStatus(mask) {
-    const s = (btn, name) => `${name}:${(mask & btn) ? 'ON ' : 'OFF'}`;
-    const txt = `\r[ ${s(BTN_UP, 'UP')} | ${s(BTN_DOWN, 'DOWN')} | ${s(BTN_LEFT, 'LEFT')} | ${s(BTN_RIGHT, 'RIGHT')} | ${s(BTN_A, 'A')} | ${s(BTN_B, 'B')} | ${s(BTN_START, 'START')} | ${s(BTN_SELECT, 'SELECT')} ]`;
+function renderConsoleStatus(p1, p2) {
+    const s = (mask, btn, name) => `${name}:${(mask & btn) ? 'ON ' : 'OFF'}`;
+    const txt = `\r[P1: ${s(p1, BTN_UP, 'U')}${s(p1, BTN_DOWN, 'D')}${s(p1, BTN_LEFT, 'L')}${s(p1, BTN_RIGHT, 'R')} | A:${p1&BTN_A?'1':'0'} B:${p1&BTN_B?'1':'0'}] [P2: ${s(p2, BTN_UP, 'U')}${s(p2, BTN_DOWN, 'D')}${s(p2, BTN_LEFT, 'L')}${s(p2, BTN_RIGHT, 'R')} | A:${p2&BTN_A?'1':'0'} B:${p2&BTN_B?'1':'0'}]`;
     process.stdout.write(txt);
 }
 
-// Iniciação dos Subsistemas
 initNiosBridge();
 server.listen(HTTP_PORT, () => {
     setupTerminalKeyboard();

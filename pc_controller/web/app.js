@@ -1,8 +1,12 @@
 /**
- * NES-FPGA Web Controller Client
- * ==============================
- * Captura eventos de teclado, toques na tela e gamepads USB/Bluetooth
- * e transmite para o servidor bridge Node.js via WebSocket local.
+ * NES-FPGA Dual Controller Web Client
+ * ===================================
+ * Gerencia o estado de 2 controles independentes (Player 1 e Player 2).
+ * Suporta:
+ *   - Remapeamento dinâmico e interativo de teclas (com salvamento no localStorage)
+ *   - Atribuição de dispositivos (Teclado, Gamepad 1, Gamepad 2) para cada jogador
+ *   - HTML5 Gamepad API para até múltiplos joysticks USB/Bluetooth físicos no PC
+ *   - Transmissão WebSocket contínua de [p1_mask, p2_mask] para a bridge Node.js
  */
 
 // Constantes de Bits do Controle de NES
@@ -15,65 +19,119 @@ const BTN_SELECT = 1 << 5;
 const BTN_B      = 1 << 6;
 const BTN_A      = 1 << 7;
 
-// Mapeamento de Teclas do Teclado Físico
-const KEY_MAP = {
-    'KeyW': BTN_UP,
-    'ArrowUp': BTN_UP,
-    'KeyS': BTN_DOWN,
-    'ArrowDown': BTN_DOWN,
-    'KeyA': BTN_LEFT,
-    'ArrowLeft': BTN_LEFT,
-    'KeyD': BTN_RIGHT,
-    'ArrowRight': BTN_RIGHT,
-    'KeyK': BTN_A,
-    'KeyX': BTN_A,
-    'KeyJ': BTN_B,
-    'KeyZ': BTN_B,
-    'Enter': BTN_START,
-    'KeyU': BTN_SELECT,
-    'ShiftRight': BTN_SELECT,
-    'ShiftLeft': BTN_SELECT
+// Mapeamentos Padrão (Factory Defaults)
+const DEFAULT_BINDINGS = {
+    p1: {
+        up: 'KeyW',
+        down: 'KeyS',
+        left: 'KeyA',
+        right: 'KeyD',
+        b: 'KeyJ',
+        a: 'KeyK',
+        select: 'KeyU',
+        start: 'KeyI'
+    },
+    p2: {
+        up: 'ArrowUp',
+        down: 'ArrowDown',
+        left: 'ArrowLeft',
+        right: 'ArrowRight',
+        b: 'Numpad1',
+        a: 'Numpad2',
+        select: 'Numpad4',
+        start: 'Numpad5'
+    }
 };
+
+// Carrega preferências do localStorage ou usa padrões
+let keyBindings = loadBindings();
+
+function loadBindings() {
+    try {
+        const saved = localStorage.getItem('nes_dual_bindings');
+        if (saved) {
+            return JSON.parse(saved);
+        }
+    } catch {
+        // Fallback para padrões
+    }
+    return JSON.parse(JSON.stringify(DEFAULT_BINDINGS));
+}
+
+function saveBindings() {
+    try {
+        localStorage.setItem('nes_dual_bindings', JSON.stringify(keyBindings));
+    } catch {
+        // Ignora erros de cota
+    }
+}
+
+// Estado dos Controles
+let p1Mask = 0;
+let p2Mask = 0;
+let ws = null;
+const pressedPhysicalKeys = new Set();
+const p1TouchButtons = new Set();
+const p2TouchButtons = new Set();
 
 // Elementos da Interface
-const elements = {
-    up: document.getElementById('btn-up'),
-    down: document.getElementById('btn-down'),
-    left: document.getElementById('btn-left'),
-    right: document.getElementById('btn-right'),
-    a: document.getElementById('btn-a'),
-    b: document.getElementById('btn-b'),
-    start: document.getElementById('btn-start'),
-    select: document.getElementById('btn-select'),
+const ui = {
     indicator: document.getElementById('connection-indicator'),
     status: document.getElementById('connection-status'),
-    gamepadInfo: document.getElementById('gamepad-info')
+    p1Source: document.getElementById('p1-source'),
+    p2Source: document.getElementById('p2-source'),
+    gamepadTelemetry: document.getElementById('gamepad-telemetry'),
+    modal: document.getElementById('settings-modal'),
+    btnOpenSettings: document.getElementById('btn-open-settings'),
+    btnCloseModal: document.getElementById('btn-close-modal'),
+    btnSaveModal: document.getElementById('btn-save-modal'),
+    btnResetDefaults: document.getElementById('btn-reset-defaults')
 };
 
-let currentMask = 0;
-let ws = null;
-const activeKeys = new Set();
-const activeTouches = new Set();
+// Mapeamento dos botões virtuais na tela para animação
+const visualButtons = {
+    p1: {
+        up: document.getElementById('p1-btn-up'),
+        down: document.getElementById('p1-btn-down'),
+        left: document.getElementById('p1-btn-left'),
+        right: document.getElementById('p1-btn-right'),
+        b: document.getElementById('p1-btn-b'),
+        a: document.getElementById('p1-btn-a'),
+        select: document.getElementById('p1-btn-select'),
+        start: document.getElementById('p1-btn-start')
+    },
+    p2: {
+        up: document.getElementById('p2-btn-up'),
+        down: document.getElementById('p2-btn-down'),
+        left: document.getElementById('p2-btn-left'),
+        right: document.getElementById('p2-btn-right'),
+        b: document.getElementById('p2-btn-b'),
+        a: document.getElementById('p2-btn-a'),
+        select: document.getElementById('p2-btn-select'),
+        start: document.getElementById('p2-btn-start')
+    }
+};
 
 /**
- * Conexão WebSocket com reconexão automática
+ * Conexão WebSocket
  */
 function connectWebSocket() {
     const wsUrl = `ws://${window.location.host || 'localhost:8080'}`;
-    elements.status.textContent = 'Conectando ao servidor bridge...';
+    ui.status.textContent = 'Conectando ao FPGA...';
 
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-        elements.indicator.className = 'dot connected';
-        elements.status.textContent = 'Conectado ao FPGA (JTAG UART ativo)';
+        ui.indicator.className = 'dot connected';
+        ui.status.textContent = 'Conectado (Dual Core Ativo)';
     };
 
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            if (data.type === 'state' && typeof data.mask === 'number') {
-                updateVisualState(data.mask);
+            if (data.type === 'state2') {
+                updateVisual(visualButtons.p1, data.p1 || 0);
+                updateVisual(visualButtons.p2, data.p2 || 0);
             }
         } catch {
             // Ignora
@@ -81,8 +139,8 @@ function connectWebSocket() {
     };
 
     ws.onclose = () => {
-        elements.indicator.className = 'dot disconnected';
-        elements.status.textContent = 'Desconectado (Tentando reconectar em 2s...)';
+        ui.indicator.className = 'dot disconnected';
+        ui.status.textContent = 'Desconectado (Reconectando em 2s...)';
         setTimeout(connectWebSocket, 2000);
     };
 
@@ -91,149 +149,254 @@ function connectWebSocket() {
     };
 }
 
-/**
- * Envia o estado consolidado da máscara de botões para o FPGA.
- */
-function broadcastMask(mask) {
-    if (mask === currentMask) return;
-    currentMask = mask;
-    updateVisualState(currentMask);
+function broadcastDualMask(mask1, mask2) {
+    if (mask1 === p1Mask && mask2 === p2Mask) return;
+    p1Mask = mask1;
+    p2Mask = mask2;
+
+    updateVisual(visualButtons.p1, p1Mask);
+    updateVisual(visualButtons.p2, p2Mask);
 
     if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'mask', mask: currentMask }));
+        ws.send(JSON.stringify({ type: 'mask2', p1: p1Mask, p2: p2Mask }));
     }
 }
 
-/**
- * Atualiza as classes CSS ativas dos botões virtuais na tela.
- */
-function updateVisualState(mask) {
-    elements.up.classList.toggle('active', (mask & BTN_UP) !== 0);
-    elements.down.classList.toggle('active', (mask & BTN_DOWN) !== 0);
-    elements.left.classList.toggle('active', (mask & BTN_LEFT) !== 0);
-    elements.right.classList.toggle('active', (mask & BTN_RIGHT) !== 0);
-    elements.a.classList.toggle('active', (mask & BTN_A) !== 0);
-    elements.b.classList.toggle('active', (mask & BTN_B) !== 0);
-    elements.start.classList.toggle('active', (mask & BTN_START) !== 0);
-    elements.select.classList.toggle('active', (mask & BTN_SELECT) !== 0);
+function updateVisual(btns, mask) {
+    btns.up.classList.toggle('active', (mask & BTN_UP) !== 0);
+    btns.down.classList.toggle('active', (mask & BTN_DOWN) !== 0);
+    btns.left.classList.toggle('active', (mask & BTN_LEFT) !== 0);
+    btns.right.classList.toggle('active', (mask & BTN_RIGHT) !== 0);
+    btns.b.classList.toggle('active', (mask & BTN_B) !== 0);
+    btns.a.classList.toggle('active', (mask & BTN_A) !== 0);
+    btns.select.classList.toggle('active', (mask & BTN_SELECT) !== 0);
+    btns.start.classList.toggle('active', (mask & BTN_START) !== 0);
 }
 
 /**
- * Recalcula a máscara combinando Teclado + Toque/Mouse + Gamepad
+ * Cálculo das Máscaras a partir do Teclado
  */
-function recalculateMask() {
+function computeKeyboardMask(player) {
+    const binds = keyBindings[player];
     let mask = 0;
-    for (const code of activeKeys) {
-        if (KEY_MAP[code]) {
-            mask |= KEY_MAP[code];
-        }
-    }
-    for (const btn of activeTouches) {
-        if (btn === 'up') mask |= BTN_UP;
-        else if (btn === 'down') mask |= BTN_DOWN;
-        else if (btn === 'left') mask |= BTN_LEFT;
-        else if (btn === 'right') mask |= BTN_RIGHT;
-        else if (btn === 'a') mask |= BTN_A;
-        else if (btn === 'b') mask |= BTN_B;
-        else if (btn === 'start') mask |= BTN_START;
-        else if (btn === 'select') mask |= BTN_SELECT;
-    }
+
+    if (pressedPhysicalKeys.has(binds.up)) mask |= BTN_UP;
+    if (pressedPhysicalKeys.has(binds.down)) mask |= BTN_DOWN;
+    if (pressedPhysicalKeys.has(binds.left)) mask |= BTN_LEFT;
+    if (pressedPhysicalKeys.has(binds.right)) mask |= BTN_RIGHT;
+    if (pressedPhysicalKeys.has(binds.b)) mask |= BTN_B;
+    if (pressedPhysicalKeys.has(binds.a)) mask |= BTN_A;
+    if (pressedPhysicalKeys.has(binds.select)) mask |= BTN_SELECT;
+    if (pressedPhysicalKeys.has(binds.start)) mask |= BTN_START;
+
     return mask;
 }
 
-// Listeners de Teclado no Navegador
+function computeTouchMask(touchSet) {
+    let mask = 0;
+    if (touchSet.has('up')) mask |= BTN_UP;
+    if (touchSet.has('down')) mask |= BTN_DOWN;
+    if (touchSet.has('left')) mask |= BTN_LEFT;
+    if (touchSet.has('right')) mask |= BTN_RIGHT;
+    if (touchSet.has('b')) mask |= BTN_B;
+    if (touchSet.has('a')) mask |= BTN_A;
+    if (touchSet.has('select')) mask |= BTN_SELECT;
+    if (touchSet.has('start')) mask |= BTN_START;
+    return mask;
+}
+
+/**
+ * Leitura de Gamepad da API HTML5
+ */
+function readGamepadMask(gpIndex) {
+    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    if (!gamepads || !gamepads[gpIndex]) return 0;
+    const gp = gamepads[gpIndex];
+
+    let mask = 0;
+    // D-Pad
+    if (gp.buttons[12] && gp.buttons[12].pressed) mask |= BTN_UP;
+    if (gp.buttons[13] && gp.buttons[13].pressed) mask |= BTN_DOWN;
+    if (gp.buttons[14] && gp.buttons[14].pressed) mask |= BTN_LEFT;
+    if (gp.buttons[15] && gp.buttons[15].pressed) mask |= BTN_RIGHT;
+
+    // Analógico Esquerdo
+    if (gp.axes[1] < -0.4) mask |= BTN_UP;
+    if (gp.axes[1] > 0.4)  mask |= BTN_DOWN;
+    if (gp.axes[0] < -0.4) mask |= BTN_LEFT;
+    if (gp.axes[0] > 0.4)  mask |= BTN_RIGHT;
+
+    // Botões Ação
+    if (gp.buttons[0] && gp.buttons[0].pressed) mask |= BTN_A;
+    if (gp.buttons[1] && gp.buttons[1].pressed) mask |= BTN_B;
+    if (gp.buttons[2] && gp.buttons[2].pressed) mask |= BTN_B; // X alternativo para B
+
+    // Select e Start
+    if (gp.buttons[8] && gp.buttons[8].pressed) mask |= BTN_SELECT;
+    if (gp.buttons[9] && gp.buttons[9].pressed) mask |= BTN_START;
+
+    return mask;
+}
+
+/**
+ * Loop Principal de Entrada (Executado a 60 FPS com requestAnimationFrame)
+ */
+function updateInputs() {
+    let finalP1 = 0;
+    let finalP2 = 0;
+
+    const p1Src = ui.p1Source.value;
+    const p2Src = ui.p2Source.value;
+
+    // P1
+    if (p1Src === 'keyboard' || p1Src === 'both') {
+        finalP1 |= computeKeyboardMask('p1');
+    }
+    if (p1Src === 'gp0' || p1Src === 'both') {
+        finalP1 |= readGamepadMask(0);
+    } else if (p1Src === 'gp1') {
+        finalP1 |= readGamepadMask(1);
+    }
+    finalP1 |= computeTouchMask(p1TouchButtons);
+
+    // P2
+    if (p2Src === 'keyboard' || p2Src === 'both') {
+        finalP2 |= computeKeyboardMask('p2');
+    }
+    if (p2Src === 'gp1' || p2Src === 'both') {
+        finalP2 |= readGamepadMask(1);
+    } else if (p2Src === 'gp0') {
+        finalP2 |= readGamepadMask(0);
+    }
+    finalP2 |= computeTouchMask(p2TouchButtons);
+
+    broadcastDualMask(finalP1, finalP2);
+
+    // Atualiza telemetria de gamepads
+    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const connected = [];
+    for (let i = 0; i < gamepads.length; i++) {
+        if (gamepads[i]) connected.push(`#${i}: ${gamepads[i].id.substring(0, 24)}...`);
+    }
+    if (connected.length > 0) {
+        ui.gamepadTelemetry.textContent = `🎮 Gamepads Conectados: ${connected.join(' | ')}`;
+    } else {
+        ui.gamepadTelemetry.textContent = '🎮 Gamepads USB/Bluetooth: Nenhum conectado (plugue e aperte qualquer botão).';
+    }
+
+    requestAnimationFrame(updateInputs);
+}
+
+/**
+ * Interação de Teclado Global
+ */
+let recordingButton = null;
+
 window.addEventListener('keydown', (e) => {
-    if (KEY_MAP[e.code]) {
-        e.preventDefault(); // Previne rolagem de página
-        activeKeys.add(e.code);
-        broadcastMask(recalculateMask());
+    // Se o modal estiver no modo de gravação de tecla
+    if (recordingButton) {
+        e.preventDefault();
+        const player = recordingButton.dataset.p;
+        const action = recordingButton.dataset.act;
+
+        keyBindings[player][action] = e.code;
+        recordingButton.textContent = e.code;
+        recordingButton.classList.remove('recording');
+        recordingButton = null;
+        saveBindings();
+        return;
+    }
+
+    // Previne rolagem de setas/espaço se a tecla pertencer a um jogador ativo
+    const isBoundKey = Object.values(keyBindings.p1).includes(e.code) || Object.values(keyBindings.p2).includes(e.code);
+    if (isBoundKey) {
+        e.preventDefault();
+        pressedPhysicalKeys.add(e.code);
     }
 });
 
 window.addEventListener('keyup', (e) => {
-    if (KEY_MAP[e.code]) {
-        e.preventDefault();
-        activeKeys.delete(e.code);
-        broadcastMask(recalculateMask());
-    }
+    pressedPhysicalKeys.delete(e.code);
 });
 
-// Suporte a Mouse e Toque nos Botões Virtuais
-const interactiveButtons = document.querySelectorAll('[data-btn]');
-interactiveButtons.forEach((btn) => {
-    const btnType = btn.getAttribute('data-btn');
+/**
+ * Eventos nos Botões Virtuais (Mouse e Touch)
+ */
+function setupTouchControls() {
+    document.querySelectorAll('[data-btn]').forEach((btn) => {
+        const player = btn.dataset.player;
+        const btnType = btn.dataset.btn;
+        const targetSet = (player === 'p1') ? p1TouchButtons : p2TouchButtons;
 
-    const handlePress = (e) => {
-        e.preventDefault();
-        activeTouches.add(btnType);
-        broadcastMask(recalculateMask());
-    };
+        const press = (e) => {
+            e.preventDefault();
+            targetSet.add(btnType);
+        };
+        const release = (e) => {
+            e.preventDefault();
+            targetSet.delete(btnType);
+        };
 
-    const handleRelease = (e) => {
-        e.preventDefault();
-        activeTouches.delete(btnType);
-        broadcastMask(recalculateMask());
-    };
+        btn.addEventListener('mousedown', press);
+        btn.addEventListener('mouseup', release);
+        btn.addEventListener('mouseleave', release);
+        btn.addEventListener('touchstart', press, { passive: false });
+        btn.addEventListener('touchend', release, { passive: false });
+        btn.addEventListener('touchcancel', release, { passive: false });
+    });
+}
 
-    btn.addEventListener('mousedown', handlePress);
-    btn.addEventListener('mouseup', handleRelease);
-    btn.addEventListener('mouseleave', handleRelease);
+/**
+ * Configuração do Modal de Mapeamento
+ */
+function refreshModalLabels() {
+    document.querySelectorAll('.key-binder').forEach((btn) => {
+        const p = btn.dataset.p;
+        const act = btn.dataset.act;
+        btn.textContent = keyBindings[p][act] || 'Não definido';
+    });
+}
 
-    btn.addEventListener('touchstart', handlePress, { passive: false });
-    btn.addEventListener('touchend', handleRelease, { passive: false });
-    btn.addEventListener('touchcancel', handleRelease, { passive: false });
-});
+function setupModal() {
+    ui.btnOpenSettings.addEventListener('click', () => {
+        refreshModalLabels();
+        ui.modal.classList.remove('hidden');
+    });
 
-// Suporte à HTML5 Gamepad API (Controle USB/Bluetooth no PC)
-let hasGamepad = false;
-
-function pollGamepad() {
-    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-    let gpMask = 0;
-    let foundGp = false;
-
-    for (const gp of gamepads) {
-        if (!gp) continue;
-        foundGp = true;
-
-        // D-Pad / Botões direcionais
-        if (gp.buttons[12] && gp.buttons[12].pressed) gpMask |= BTN_UP;
-        if (gp.buttons[13] && gp.buttons[13].pressed) gpMask |= BTN_DOWN;
-        if (gp.buttons[14] && gp.buttons[14].pressed) gpMask |= BTN_LEFT;
-        if (gp.buttons[15] && gp.buttons[15].pressed) gpMask |= BTN_RIGHT;
-
-        // Analógico Esquerdo
-        if (gp.axes[1] < -0.4) gpMask |= BTN_UP;
-        if (gp.axes[1] > 0.4)  gpMask |= BTN_DOWN;
-        if (gp.axes[0] < -0.4) gpMask |= BTN_LEFT;
-        if (gp.axes[0] > 0.4)  gpMask |= BTN_RIGHT;
-
-        // Botões de Ação (A, B, X, Y)
-        if (gp.buttons[0] && gp.buttons[0].pressed) gpMask |= BTN_A; // Xbox A / PS X
-        if (gp.buttons[1] && gp.buttons[1].pressed) gpMask |= BTN_B; // Xbox B / PS Circulo
-        if (gp.buttons[2] && gp.buttons[2].pressed) gpMask |= BTN_B; // Xbox X / PS Quadrado
-
-        // Select e Start
-        if (gp.buttons[8] && gp.buttons[8].pressed) gpMask |= BTN_SELECT;
-        if (gp.buttons[9] && gp.buttons[9].pressed) gpMask |= BTN_START;
-
-        elements.gamepadInfo.textContent = `Gamepad Conectado: ${gp.id}`;
-        break;
-    }
-
-    if (foundGp !== hasGamepad) {
-        hasGamepad = foundGp;
-        if (!hasGamepad) {
-            elements.gamepadInfo.textContent = 'Gamepad USB/Bluetooth: Não detectado (Conecte um controle e pressione qualquer botão)';
+    ui.btnCloseModal.addEventListener('click', () => {
+        if (recordingButton) {
+            recordingButton.classList.remove('recording');
+            recordingButton = null;
         }
-    }
+        ui.modal.classList.add('hidden');
+    });
 
-    const totalMask = recalculateMask() | gpMask;
-    broadcastMask(totalMask);
+    ui.btnSaveModal.addEventListener('click', () => {
+        saveBindings();
+        ui.modal.classList.add('hidden');
+    });
 
-    requestAnimationFrame(pollGamepad);
+    ui.btnResetDefaults.addEventListener('click', () => {
+        keyBindings = JSON.parse(JSON.stringify(DEFAULT_BINDINGS));
+        saveBindings();
+        refreshModalLabels();
+    });
+
+    // Clique para remapear
+    document.querySelectorAll('.key-binder').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            if (recordingButton) {
+                recordingButton.classList.remove('recording');
+            }
+            recordingButton = btn;
+            btn.classList.add('recording');
+            btn.textContent = 'Pressione tecla...';
+        });
+    });
 }
 
 // Inicialização
+setupTouchControls();
+setupModal();
 connectWebSocket();
-requestAnimationFrame(pollGamepad);
+requestAnimationFrame(updateInputs);

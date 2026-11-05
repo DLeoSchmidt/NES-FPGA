@@ -3,81 +3,205 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NES-FPGA Web Controller</title>
+    <title>NES-FPGA Dual Controller</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
+    <div class="app-layout">
         <header>
-            <h1>NES-FPGA Controller</h1>
-            <div class="status-bar">
-                <span id="connection-indicator" class="dot disconnected"></span>
-                <span id="connection-status">Desconectado (Aguardando Bridge)</span>
+            <div class="brand">
+                <h1>NES-FPGA Dual Controller</h1>
+                <span class="badge-system">2-Player Independent Core</span>
+            </div>
+            <div class="top-actions">
+                <button id="btn-open-settings" class="btn-primary">
+                    <span class="icon">⚙️</span> Configurar Teclas & Controles
+                </button>
+                <div class="status-bar">
+                    <span id="connection-indicator" class="dot disconnected"></span>
+                    <span id="connection-status">Desconectado</span>
+                </div>
             </div>
         </header>
 
-        <!-- Controle Físico Virtual do NES -->
-        <main class="controller-case">
-            <div class="stripe-top"></div>
-            
-            <div class="controller-inner">
-                <!-- D-PAD (Cruz Direcional) -->
-                <div class="dpad-zone">
-                    <div class="dpad">
-                        <div class="dpad-btn up" data-btn="up" id="btn-up"><span>▲</span></div>
-                        <div class="dpad-btn left" data-btn="left" id="btn-left"><span>◀</span></div>
-                        <div class="dpad-center"></div>
-                        <div class="dpad-btn right" data-btn="right" id="btn-right"><span>▶</span></div>
-                        <div class="dpad-btn down" data-btn="down" id="btn-down"><span>▼</span></div>
+        <!-- Grade com os Dois Controles Virtuais do NES -->
+        <main class="controllers-grid">
+            <!-- PLAYER 1 -->
+            <section class="player-panel p1-panel">
+                <div class="panel-header">
+                    <div class="player-tag tag-p1">PLAYER 1</div>
+                    <div class="source-select-group">
+                        <label for="p1-source">Entrada:</label>
+                        <select id="p1-source" class="source-select">
+                            <option value="keyboard">Teclado</option>
+                            <option value="gp0">Gamepad #1</option>
+                            <option value="gp1">Gamepad #2</option>
+                            <option value="both" selected>Teclado + Gamepad #1</option>
+                        </select>
                     </div>
                 </div>
 
-                <!-- SELECT / START -->
-                <div class="middle-zone">
-                    <div class="logo">Nintendo<br><small>ENTERTAINMENT SYSTEM</small></div>
-                    <div class="pill-buttons">
-                        <div class="pill-wrapper">
-                            <button class="pill-btn" data-btn="select" id="btn-select"></button>
-                            <span class="label">SELECT</span>
+                <div class="controller-case p1-case">
+                    <div class="stripe-top"></div>
+                    <div class="controller-inner">
+                        <!-- D-PAD -->
+                        <div class="dpad-zone">
+                            <div class="dpad" data-player="p1">
+                                <div class="dpad-btn up" data-btn="up" id="p1-btn-up"><span>▲</span></div>
+                                <div class="dpad-btn left" data-btn="left" id="p1-btn-left"><span>◀</span></div>
+                                <div class="dpad-center"></div>
+                                <div class="dpad-btn right" data-btn="right" id="p1-btn-right"><span>▶</span></div>
+                                <div class="dpad-btn down" data-btn="down" id="p1-btn-down"><span>▼</span></div>
+                            </div>
                         </div>
-                        <div class="pill-wrapper">
-                            <button class="pill-btn" data-btn="start" id="btn-start"></button>
-                            <span class="label">START</span>
+
+                        <!-- MIDDLE -->
+                        <div class="middle-zone">
+                            <div class="logo">Nintendo<br><small>ENTERTAINMENT SYSTEM</small></div>
+                            <div class="pill-buttons">
+                                <div class="pill-wrapper">
+                                    <button class="pill-btn" data-player="p1" data-btn="select" id="p1-btn-select"></button>
+                                    <span class="label">SELECT</span>
+                                </div>
+                                <div class="pill-wrapper">
+                                    <button class="pill-btn" data-player="p1" data-btn="start" id="p1-btn-start"></button>
+                                    <span class="label">START</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ACTION -->
+                        <div class="action-zone">
+                            <div class="round-btn-wrapper">
+                                <button class="round-btn btn-b" data-player="p1" data-btn="b" id="p1-btn-b">B</button>
+                            </div>
+                            <div class="round-btn-wrapper">
+                                <button class="round-btn btn-a" data-player="p1" data-btn="a" id="p1-btn-a">A</button>
+                            </div>
                         </div>
                     </div>
+                    <div class="stripe-bottom"></div>
                 </div>
 
-                <!-- BOTÕES B / A -->
-                <div class="action-zone">
-                    <div class="round-btn-wrapper">
-                        <button class="round-btn" data-btn="b" id="btn-b">B</button>
-                    </div>
-                    <div class="round-btn-wrapper">
-                        <button class="round-btn" data-btn="a" id="btn-a">A</button>
+                <div class="quick-bindings">
+                    <span><strong>Mapeamento P1:</strong> W/A/S/D (Dir) | J (B) | K (A) | U (Select) | I (Start)</span>
+                </div>
+            </section>
+
+            <!-- PLAYER 2 -->
+            <section class="player-panel p2-panel">
+                <div class="panel-header">
+                    <div class="player-tag tag-p2">PLAYER 2</div>
+                    <div class="source-select-group">
+                        <label for="p2-source">Entrada:</label>
+                        <select id="p2-source" class="source-select">
+                            <option value="keyboard">Teclado</option>
+                            <option value="gp0">Gamepad #1</option>
+                            <option value="gp1" selected>Gamepad #2</option>
+                            <option value="both">Teclado + Gamepad #2</option>
+                        </select>
                     </div>
                 </div>
-            </div>
 
-            <div class="stripe-bottom"></div>
+                <div class="controller-case p2-case">
+                    <div class="stripe-top stripe-p2"></div>
+                    <div class="controller-inner">
+                        <!-- D-PAD -->
+                        <div class="dpad-zone">
+                            <div class="dpad" data-player="p2">
+                                <div class="dpad-btn up" data-btn="up" id="p2-btn-up"><span>▲</span></div>
+                                <div class="dpad-btn left" data-btn="left" id="p2-btn-left"><span>◀</span></div>
+                                <div class="dpad-center"></div>
+                                <div class="dpad-btn right" data-btn="right" id="p2-btn-right"><span>▶</span></div>
+                                <div class="dpad-btn down" data-btn="down" id="p2-btn-down"><span>▼</span></div>
+                            </div>
+                        </div>
+
+                        <!-- MIDDLE -->
+                        <div class="middle-zone">
+                            <div class="logo logo-p2">Nintendo<br><small>PLAYER TWO</small></div>
+                            <div class="pill-buttons">
+                                <div class="pill-wrapper">
+                                    <button class="pill-btn pill-p2" data-player="p2" data-btn="select" id="p2-btn-select"></button>
+                                    <span class="label label-p2">SELECT</span>
+                                </div>
+                                <div class="pill-wrapper">
+                                    <button class="pill-btn pill-p2" data-player="p2" data-btn="start" id="p2-btn-start"></button>
+                                    <span class="label label-p2">START</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ACTION -->
+                        <div class="action-zone action-p2">
+                            <div class="round-btn-wrapper">
+                                <button class="round-btn btn-b btn-p2" data-player="p2" data-btn="b" id="p2-btn-b">B</button>
+                            </div>
+                            <div class="round-btn-wrapper">
+                                <button class="round-btn btn-a btn-p2" data-player="p2" data-btn="a" id="p2-btn-a">A</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stripe-bottom stripe-p2"></div>
+                </div>
+
+                <div class="quick-bindings">
+                    <span><strong>Mapeamento P2:</strong> Setas (Dir) | Numpad 1 (B) | Numpad 2 (A) | Numpad 4 (Sel) | Numpad 5 (Start)</span>
+                </div>
+            </section>
         </main>
 
-        <!-- Informações de Mapeamento e Gamepad -->
-        <section class="instructions-card">
-            <h3>Mapeamento de Teclas no Teclado:</h3>
-            <div class="key-grid">
-                <div><kbd>W</kbd> ou <kbd>▲</kbd> : Cima</div>
-                <div><kbd>S</kbd> ou <kbd>▼</kbd> : Baixo</div>
-                <div><kbd>A</kbd> ou <kbd>◀</kbd> : Esquerda</div>
-                <div><kbd>D</kbd> ou <kbd>▶</kbd> : Direita</div>
-                <div><kbd>K</kbd> ou <kbd>X</kbd> : Botão A</div>
-                <div><kbd>J</kbd> ou <kbd>Z</kbd> : Botão B</div>
-                <div><kbd>Enter</kbd> : Start</div>
-                <div><kbd>U</kbd> ou <kbd>Shift</kbd> : Select</div>
+        <!-- Informações de Gamepads Detectados -->
+        <footer class="telemetry-footer">
+            <div id="gamepad-telemetry">
+                <span>🎮 Gamepads USB/Bluetooth: Nenhum conectado (plugue e aperte qualquer botão).</span>
             </div>
-            <div id="gamepad-info" class="gamepad-info">
-                <span>Gamepad USB/Bluetooth: Não detectado (Conecte um controle e pressione qualquer botão)</span>
+        </footer>
+    </div>
+
+    <!-- Modal de Configuração Interativa de Teclas -->
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>Configuração de Teclas & Atribuição de Controles</h2>
+                <button id="btn-close-modal" class="btn-close">&times;</button>
             </div>
-        </section>
+            
+            <p class="modal-tip">💡 Clique no botão de qualquer ação e em seguida <strong>pressione a tecla desejada</strong> no seu teclado para remapear.</p>
+
+            <div class="mapping-columns">
+                <!-- Coluna Player 1 -->
+                <div class="mapping-col">
+                    <h3 class="col-title title-p1">Player 1 (Vermelho)</h3>
+                    <div class="bind-row"><span>Cima (Up):</span><button class="key-binder" data-p="p1" data-act="up">KeyW</button></div>
+                    <div class="bind-row"><span>Baixo (Down):</span><button class="key-binder" data-p="p1" data-act="down">KeyS</button></div>
+                    <div class="bind-row"><span>Esquerda (Left):</span><button class="key-binder" data-p="p1" data-act="left">KeyA</button></div>
+                    <div class="bind-row"><span>Direita (Right):</span><button class="key-binder" data-p="p1" data-act="right">KeyD</button></div>
+                    <div class="bind-row"><span>Botão B:</span><button class="key-binder" data-p="p1" data-act="b">KeyJ</button></div>
+                    <div class="bind-row"><span>Botão A:</span><button class="key-binder" data-p="p1" data-act="a">KeyK</button></div>
+                    <div class="bind-row"><span>Select:</span><button class="key-binder" data-p="p1" data-act="select">KeyU</button></div>
+                    <div class="bind-row"><span>Start:</span><button class="key-binder" data-p="p1" data-act="start">KeyI</button></div>
+                </div>
+
+                <!-- Coluna Player 2 -->
+                <div class="mapping-col">
+                    <h3 class="col-title title-p2">Player 2 (Azul)</h3>
+                    <div class="bind-row"><span>Cima (Up):</span><button class="key-binder" data-p="p2" data-act="up">ArrowUp</button></div>
+                    <div class="bind-row"><span>Baixo (Down):</span><button class="key-binder" data-p="p2" data-act="down">ArrowDown</button></div>
+                    <div class="bind-row"><span>Esquerda (Left):</span><button class="key-binder" data-p="p2" data-act="left">ArrowLeft</button></div>
+                    <div class="bind-row"><span>Direita (Right):</span><button class="key-binder" data-p="p2" data-act="right">ArrowRight</button></div>
+                    <div class="bind-row"><span>Botão B:</span><button class="key-binder" data-p="p2" data-act="b">Numpad1</button></div>
+                    <div class="bind-row"><span>Botão A:</span><button class="key-binder" data-p="p2" data-act="a">Numpad2</button></div>
+                    <div class="bind-row"><span>Select:</span><button class="key-binder" data-p="p2" data-act="select">Numpad4</button></div>
+                    <div class="bind-row"><span>Start:</span><button class="key-binder" data-p="p2" data-act="start">Numpad5</button></div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button id="btn-reset-defaults" class="btn-secondary">Restaurar Padrões</button>
+                <button id="btn-save-modal" class="btn-primary">Salvar & Concluir</button>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>

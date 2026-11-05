@@ -1,70 +1,66 @@
-# NES-FPGA: PC Controller & Web Gamepad
+# NES-FPGA: Dual PC Controller & Web Gamepad (Player 1 & Player 2)
 
-Este pacote permite usar o teclado ou controle do computador como controle do emulador de NES rodando na FPGA, utilizando o mesmo cabo USB-Blaster empregado para carregar o arquivo `.sof`.
-
----
-
-## Como Funciona
-
-A comunicação utiliza o periférico **JTAG UART** já sintetizado no design Qsys da FPGA (`/dev/jtag_uart_0`).
-Ao pressionar teclas no PC, os eventos são empacotados em um frame binário de 2 bytes (`0x5A` + máscara de botões) e transmitidos instantaneamente para a CPU Nios II.
-
-> **Coexistência:** As funções originais do shield MAX3421E continuam 100% ativas! Você pode usar tanto o teclado do PC quanto um teclado USB plugado no shield ao mesmo tempo.
+Suporte a **2 controles independentes** para jogos multiplayer no emulador NES rodando no FPGA, utilizando o mesmo cabo USB-Blaster do arquivo `.sof`.
 
 ---
 
-## 1. Usando a Interface Web (Navegador) & Node.js
+## Novidades: Suporte a 2 Jogadores
 
-Esta é a opção mais moderna e completa. Ela inclui um controle visual do NES na tela do navegador, suporte a teclado e suporte a **Gamepads USB/Bluetooth** (Xbox, PlayStation, 8BitDo, etc.).
+- **Player 1 ($4016):** Shift register dedicado para o jogador 1.
+- **Player 2 ($4017):** Shift register dedicado para o jogador 2.
+- **Sem conflito de dados:** Ambos os jogadores podem mover e agir simultaneamente.
+- **Interface Web:** 2 gamepads visuais na tela (Player 1 em Vermelho e Player 2 em Azul), modal interativo de remapeamento de teclas e suporte a múltiplos joysticks USB/Bluetooth físicos no PC.
 
-### Como rodar:
-1. Abra um terminal na pasta `pc_controller`:
+---
+
+## 1. Como Usar a Interface Web (Navegador)
+
+1. No terminal:
    ```bash
    cd C:\HDL\t4\NES-FPGA\pc_controller
    node nes_controller.js
    ```
-2. Abra o navegador em:
+2. Abra seu navegador em:
    ```
    http://localhost:8080
    ```
-3. Pronto! O controle virtual responderá imediatamente ao seu teclado e aos cliques na tela.
+3. Na interface:
+   - Você verá os dois controles do NES (P1 e P2).
+   - Clique em **"⚙️ Configurar Teclas & Controles"** para mudar qualquer tecla: basta clicar no botão da ação e apertar a nova tecla do seu teclado!
+   - Defina qual dispositivo controla qual jogador (Teclado, Gamepad 1, Gamepad 2 ou ambos).
 
 ---
 
-## 2. Usando o Script no Terminal (Node.js CLI)
+## 2. Mapeamento de Teclas Padrão no Mesmo Teclado
 
-Ao executar `node nes_controller.js`, você também pode controlar o jogo diretamente pelo próprio terminal onde o script foi iniciado, sem precisar abrir o navegador:
-- `W / A / S / D` ou Setas: Direcional
-- `K`: Botão A
-- `J`: Botão B
-- `Enter`: Start
-- `U`: Select
-- `Ctrl + C`: Sair
-
----
-
-## 3. Usando o Script Python (Python CLI)
-
-Se preferir rodar em Python:
-1. No terminal:
-   ```bash
-   cd C:\HDL\t4\NES-FPGA\pc_controller
-   py nes_controller.py
-   # ou: python nes_controller.py
-   ```
-2. Use o teclado no console com o mesmo mapeamento do NES.
-
----
-
-## Mapeamento de Teclas
-
-| Botão do NES | Teclas no Teclado |
+### Player 1 (Mão Esquerda)
+| Botão do NES | Tecla Padrão |
 | :--- | :--- |
-| **Cima** | `W` ou `Seta para Cima` |
-| **Baixo** | `S` ou `Seta para Baixo` |
-| **Esquerda** | `A` ou `Seta para a Esquerda` |
-| **Direita** | `D` ou `Seta para a Direita` |
-| **Botão A** | `K` ou `X` |
-| **Botão B** | `J` ou `Z` |
-| **Start** | `Enter` |
-| **Select** | `U` ou `Shift` |
+| **Cima** | `W` |
+| **Baixo** | `S` |
+| **Esquerda** | `A` |
+| **Direita** | `D` |
+| **Botão B** | `J` |
+| **Botão A** | `K` |
+| **Select** | `U` |
+| **Start** | `I` |
+
+### Player 2 (Mão Direita)
+| Botão do NES | Tecla Padrão |
+| :--- | :--- |
+| **Cima** | `Seta para Cima (▲)` |
+| **Baixo** | `Seta para Baixo (▼)` |
+| **Esquerda** | `Seta para a Esquerda (◀)` |
+| **Direita** | `Seta para a Direita (▶)` |
+| **Botão B** | `Numpad 1` |
+| **Botão A** | `Numpad 2` |
+| **Select** | `Numpad 4` |
+| **Start** | `Numpad 5` |
+
+*(Você pode remapear 100% de qualquer uma dessas teclas pelo painel de configurações na Web).*
+
+---
+
+## 3. Modo Terminal (CLI)
+
+Ao iniciar `node nes_controller.js` ou `py nes_controller.py`, você também pode controlar ambos os jogadores diretamente pelo console, sem abrir o navegador.
