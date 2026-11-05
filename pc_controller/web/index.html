@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NES-FPGA Web Controller</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>NES-FPGA Controller</h1>
+            <div class="status-bar">
+                <span id="connection-indicator" class="dot disconnected"></span>
+                <span id="connection-status">Desconectado (Aguardando Bridge)</span>
+            </div>
+        </header>
+
+        <!-- Controle Físico Virtual do NES -->
+        <main class="controller-case">
+            <div class="stripe-top"></div>
+            
+            <div class="controller-inner">
+                <!-- D-PAD (Cruz Direcional) -->
+                <div class="dpad-zone">
+                    <div class="dpad">
+                        <div class="dpad-btn up" data-btn="up" id="btn-up"><span>▲</span></div>
+                        <div class="dpad-btn left" data-btn="left" id="btn-left"><span>◀</span></div>
+                        <div class="dpad-center"></div>
+                        <div class="dpad-btn right" data-btn="right" id="btn-right"><span>▶</span></div>
+                        <div class="dpad-btn down" data-btn="down" id="btn-down"><span>▼</span></div>
+                    </div>
+                </div>
+
+                <!-- SELECT / START -->
+                <div class="middle-zone">
+                    <div class="logo">Nintendo<br><small>ENTERTAINMENT SYSTEM</small></div>
+                    <div class="pill-buttons">
+                        <div class="pill-wrapper">
+                            <button class="pill-btn" data-btn="select" id="btn-select"></button>
+                            <span class="label">SELECT</span>
+                        </div>
+                        <div class="pill-wrapper">
+                            <button class="pill-btn" data-btn="start" id="btn-start"></button>
+                            <span class="label">START</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BOTÕES B / A -->
+                <div class="action-zone">
+                    <div class="round-btn-wrapper">
+                        <button class="round-btn" data-btn="b" id="btn-b">B</button>
+                    </div>
+                    <div class="round-btn-wrapper">
+                        <button class="round-btn" data-btn="a" id="btn-a">A</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="stripe-bottom"></div>
+        </main>
+
+        <!-- Informações de Mapeamento e Gamepad -->
+        <section class="instructions-card">
+            <h3>Mapeamento de Teclas no Teclado:</h3>
+            <div class="key-grid">
+                <div><kbd>W</kbd> ou <kbd>▲</kbd> : Cima</div>
+                <div><kbd>S</kbd> ou <kbd>▼</kbd> : Baixo</div>
+                <div><kbd>A</kbd> ou <kbd>◀</kbd> : Esquerda</div>
+                <div><kbd>D</kbd> ou <kbd>▶</kbd> : Direita</div>
+                <div><kbd>K</kbd> ou <kbd>X</kbd> : Botão A</div>
+                <div><kbd>J</kbd> ou <kbd>Z</kbd> : Botão B</div>
+                <div><kbd>Enter</kbd> : Start</div>
+                <div><kbd>U</kbd> ou <kbd>Shift</kbd> : Select</div>
+            </div>
+            <div id="gamepad-info" class="gamepad-info">
+                <span>Gamepad USB/Bluetooth: Não detectado (Conecte um controle e pressione qualquer botão)</span>
+            </div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
