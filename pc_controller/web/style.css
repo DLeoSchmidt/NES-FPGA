@@ -585,3 +585,132 @@ h1 {
     padding-top: 10px;
     border-top: 1px solid #28303d;
 }
+
+/* Barra de Seleção de Cartucho / Jogo */
+.cartridge-switch-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #0f1217;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid #28303d;
+}
+
+.cart-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #ffd54f;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.game-select {
+    background: #1e2430;
+    color: #ffffff;
+    border: 1px solid #3d4a5e;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    max-width: 280px;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.game-select:focus {
+    border-color: #00bcd4;
+}
+
+.btn-cart-switch {
+    background: #2e7d32;
+    color: #ffffff;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.05s ease;
+}
+
+.btn-cart-switch:hover {
+    background: #388e3c;
+}
+
+.btn-cart-switch:active {
+    transform: scale(0.96);
+}
+
+/* Modal de Troca de Jogo */
+.modal-body-switch {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 10px 0;
+}
+
+.game-details-badge {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.badge-tag {
+    background: #252d3a;
+    color: #00e5ff;
+    border: 1px solid #364457;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.switch-lead {
+    font-size: 0.95rem;
+    color: #e0e0e0;
+}
+
+.switch-lead code {
+    background: #212631;
+    color: #4fc3f7;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+.quartus-steps {
+    background: #11151c;
+    border: 1px solid #28303d;
+    padding: 16px;
+    border-radius: 8px;
+}
+
+.quartus-steps h3 {
+    font-size: 0.92rem;
+    color: #ffb74d;
+    margin-bottom: 12px;
+}
+
+.quartus-steps ol {
+    margin-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 0.88rem;
+    color: #cfd8dc;
+}
+
+.quartus-steps kbd {
+    background: #263238;
+    color: #eceff1;
+    border: 1px solid #455a64;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.78rem;
+}

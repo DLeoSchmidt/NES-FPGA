@@ -1,0 +1,14 @@
+{
+  "slug": "devil-world",
+  "title": "Devil World",
+  "romFile": "Devil World (E) [!].nes",
+  "prgBanks": 1,
+  "prgSizeKB": 16,
+  "chrBanks": 1,
+  "chrSizeKB": 8,
+  "mapper": 0,
+  "mapperType": "NROM-128",
+  "mirroring": "Horizontal",
+  "hardwareCompatibility": "Compatível (Espelhamento Horizontal)",
+  "createdAt": "2026-11-05T02:54:15.905Z"
+}

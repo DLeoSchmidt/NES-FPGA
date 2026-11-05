@@ -16,6 +16,14 @@ const path = require('path');
 const { spawn } = require('child_process');
 const readline = require('readline');
 
+// Integração com o Switch Game de Cartuchos MIF
+let switcher = null;
+try {
+    switcher = require('../cart_init/switch_game.js');
+} catch (e) {
+    console.warn('[AVISO] Módulo switch_game.js não pôde ser carregado:', e.message);
+}
+
 // Constantes de Máscara de Bits (NES)
 const BTN_RIGHT  = 1 << 0;
 const BTN_LEFT   = 1 << 1;
@@ -130,7 +138,54 @@ const MIME_TYPES = {
     '.svg': 'image/svg+xml'
 };
 
+function broadcastWsText(text) {
+    for (const ws of wsClients) {
+        sendWsText(ws, text);
+    }
+}
+
 const server = http.createServer((req, res) => {
+    // API REST - Lista de Jogos Compatíveis
+    if (req.url === '/api/games') {
+        if (!switcher) {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Módulo de jogos indisponível' }));
+            return;
+        }
+        const catalog = switcher.loadCatalog();
+        const active = switcher.getActiveGame();
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ catalog, active }));
+        return;
+    }
+
+    // API REST - Troca Dinâmica de Jogo MIF
+    if (req.url.startsWith('/api/switch-game')) {
+        if (!switcher) {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'Módulo de jogos indisponível' }));
+            return;
+        }
+        const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+        const slug = parsedUrl.searchParams.get('slug');
+        if (!slug) {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: false, error: 'Parâmetro slug ausente.' }));
+            return;
+        }
+        try {
+            switcher.switchGame(slug);
+            const active = switcher.getActiveGame();
+            broadcastWsText(JSON.stringify({ type: 'game_changed', active }));
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: true, active }));
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+        return;
+    }
+
     let reqUrl = req.url === '/' ? '/index.html' : req.url;
     const safePath = path.normalize(reqUrl).replace(/^(\.\.[\/\\])+/, '');
     const filePath = path.join(webDir, safePath);
@@ -173,6 +228,13 @@ server.on('upgrade', (req, socket) => {
     console.log(`[WS] Cliente Web conectado. Total: ${wsClients.size}`);
 
     sendWsText(socket, JSON.stringify({ type: 'state2', p1: currentP1Mask, p2: currentP2Mask }));
+
+    if (switcher) {
+        const activeGame = switcher.getActiveGame();
+        if (activeGame) {
+            sendWsText(socket, JSON.stringify({ type: 'game_changed', active: activeGame }));
+        }
+    }
 
     let frameBuffer = Buffer.alloc(0);
 

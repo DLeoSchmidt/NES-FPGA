@@ -1,0 +1,14 @@
+{
+  "slug": "wild-gunman",
+  "title": "Wild Gunman",
+  "romFile": "Wild Gunman (U) (PRG0) [!].nes",
+  "prgBanks": 1,
+  "prgSizeKB": 16,
+  "chrBanks": 1,
+  "chrSizeKB": 8,
+  "mapper": 0,
+  "mapperType": "NROM-128",
+  "mirroring": "Vertical",
+  "hardwareCompatibility": "Nativo (100% OK)",
+  "createdAt": "2026-11-05T02:54:16.300Z"
+}

@@ -13,9 +13,21 @@
                 <h1>NES-FPGA Dual Controller</h1>
                 <span class="badge-system">2-Player Independent Core</span>
             </div>
+            <div class="cartridge-switch-bar">
+                <div class="cart-label">
+                    <span class="cart-icon">📼</span>
+                    <span class="cart-title">Cartucho:</span>
+                </div>
+                <select id="select-game" class="game-select" title="Selecione o jogo NROM (Mapper 0) para carregar">
+                    <option value="" disabled selected>Carregando catálogo...</option>
+                </select>
+                <button id="btn-switch-game" class="btn-cart-switch" title="Atualiza prg.mif e chr.mif para o jogo selecionado">
+                    Trocar Jogo
+                </button>
+            </div>
             <div class="top-actions">
                 <button id="btn-open-settings" class="btn-primary">
-                    <span class="icon">⚙️</span> Configurar Teclas & Controles
+                    <span class="icon">⚙️</span> Teclas
                 </button>
                 <div class="status-bar">
                     <span id="connection-indicator" class="dot disconnected"></span>
@@ -200,6 +212,36 @@
             <div class="modal-footer">
                 <button id="btn-reset-defaults" class="btn-secondary">Restaurar Padrões</button>
                 <button id="btn-save-modal" class="btn-primary">Salvar & Concluir</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Instruções de Atualização na FPGA -->
+    <div id="switch-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>🎮 Cartucho Atualizado: <span id="modal-game-name">Super Mario Bros.</span></h2>
+                <button id="btn-close-switch-modal" class="btn-close">✕</button>
+            </div>
+            <div class="modal-body-switch">
+                <div class="game-details-badge">
+                    <span id="badge-mapper" class="badge-tag">NROM-256</span>
+                    <span id="badge-mirror" class="badge-tag">Vertical</span>
+                    <span id="badge-prg" class="badge-tag">PRG: 32 KB</span>
+                    <span id="badge-chr" class="badge-tag">CHR: 8 KB</span>
+                </div>
+                <p class="switch-lead">Os arquivos <code>cart_init/prg.mif</code> e <code>chr.mif</code> foram atualizados com sucesso!</p>
+                <div class="quartus-steps">
+                    <h3>Passos Rápidos no Intel Quartus (sem recompilar tudo):</h3>
+                    <ol>
+                        <li><strong>Processing ➔ Update Memory Initialization File</strong> <kbd>Ctrl+Shift+U</kbd></li>
+                        <li><strong>Processing ➔ Start ➔ Start Assembler</strong> <kbd>Ctrl+L</kbd></li>
+                        <li><strong>Tools ➔ Programmer ➔ Start</strong> (gravar o arquivo <code>.sof</code> atualizado na DE10-Lite)</li>
+                    </ol>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-ok-switch-modal" class="btn-primary">Entendido!</button>
             </div>
         </div>
     </div>

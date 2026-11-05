@@ -85,7 +85,18 @@ const ui = {
     btnOpenSettings: document.getElementById('btn-open-settings'),
     btnCloseModal: document.getElementById('btn-close-modal'),
     btnSaveModal: document.getElementById('btn-save-modal'),
-    btnResetDefaults: document.getElementById('btn-reset-defaults')
+    btnResetDefaults: document.getElementById('btn-reset-defaults'),
+    // Elementos do Cartridge Switcher
+    selectGame: document.getElementById('select-game'),
+    btnSwitchGame: document.getElementById('btn-switch-game'),
+    switchModal: document.getElementById('switch-modal'),
+    modalGameName: document.getElementById('modal-game-name'),
+    badgeMapper: document.getElementById('badge-mapper'),
+    badgeMirror: document.getElementById('badge-mirror'),
+    badgePrg: document.getElementById('badge-prg'),
+    badgeChr: document.getElementById('badge-chr'),
+    btnCloseSwitchModal: document.getElementById('btn-close-switch-modal'),
+    btnOkSwitchModal: document.getElementById('btn-ok-switch-modal')
 };
 
 // Mapeamento dos botões virtuais na tela para animação
@@ -132,6 +143,10 @@ function connectWebSocket() {
             if (data.type === 'state2') {
                 updateVisual(visualButtons.p1, data.p1 || 0);
                 updateVisual(visualButtons.p2, data.p2 || 0);
+            } else if (data.type === 'game_changed' && data.active) {
+                if (ui.selectGame && data.active.slug) {
+                    ui.selectGame.value = data.active.slug;
+                }
             }
         } catch {
             // Ignora
@@ -395,8 +410,93 @@ function setupModal() {
     });
 }
 
+/**
+ * Gerenciador do Seletor de Cartuchos e Troca de Jogos
+ */
+async function setupGameSwitcher() {
+    if (!ui.selectGame || !ui.btnSwitchGame) return;
+
+    try {
+        const resp = await fetch('/api/games');
+        if (!resp.ok) return;
+        const { catalog, active } = await resp.json();
+
+        ui.selectGame.innerHTML = '';
+
+        const groupVertical = document.createElement('optgroup');
+        groupVertical.label = 'Espelhamento Vertical (Nativo 100%)';
+
+        const groupHorizontal = document.createElement('optgroup');
+        groupHorizontal.label = 'Espelhamento Horizontal';
+
+        for (const game of catalog) {
+            const opt = document.createElement('option');
+            opt.value = game.slug;
+            opt.textContent = `${game.title} (${game.mapperType || 'NROM'})`;
+            if (game.mirroring === 'Vertical') {
+                groupVertical.appendChild(opt);
+            } else {
+                groupHorizontal.appendChild(opt);
+            }
+        }
+
+        ui.selectGame.appendChild(groupVertical);
+        ui.selectGame.appendChild(groupHorizontal);
+
+        if (active && active.slug) {
+            ui.selectGame.value = active.slug;
+        }
+
+        ui.btnSwitchGame.addEventListener('click', async () => {
+            const slug = ui.selectGame.value;
+            if (!slug) return;
+
+            ui.btnSwitchGame.disabled = true;
+            ui.btnSwitchGame.textContent = 'Trocando...';
+
+            try {
+                const switchResp = await fetch(`/api/switch-game?slug=${encodeURIComponent(slug)}`);
+                const result = await switchResp.json();
+
+                if (result.success && result.active) {
+                    const act = result.active;
+                    ui.modalGameName.textContent = act.title;
+                    ui.badgeMapper.textContent = act.mapperType || 'Mapper 0';
+                    ui.badgeMirror.textContent = `Espelhamento: ${act.mirroring}`;
+                    ui.badgePrg.textContent = `PRG: ${act.prgSizeKB || 32} KB`;
+                    ui.badgeChr.textContent = `CHR: ${act.chrSizeKB || 8} KB`;
+
+                    ui.switchModal.classList.remove('hidden');
+                } else {
+                    alert('Erro ao trocar jogo: ' + (result.error || 'Falha desconhecida'));
+                }
+            } catch (err) {
+                alert('Erro de rede ao trocar jogo: ' + err.message);
+            } finally {
+                ui.btnSwitchGame.disabled = false;
+                ui.btnSwitchGame.textContent = 'Trocar Jogo';
+            }
+        });
+
+        // Fechamento do modal de instruções
+        if (ui.btnCloseSwitchModal) {
+            ui.btnCloseSwitchModal.addEventListener('click', () => {
+                ui.switchModal.classList.add('hidden');
+            });
+        }
+        if (ui.btnOkSwitchModal) {
+            ui.btnOkSwitchModal.addEventListener('click', () => {
+                ui.switchModal.classList.add('hidden');
+            });
+        }
+    } catch (e) {
+        console.warn('Falha ao carregar catálogo de jogos:', e);
+    }
+}
+
 // Inicialização
 setupTouchControls();
 setupModal();
+setupGameSwitcher();
 connectWebSocket();
 requestAnimationFrame(updateInputs);

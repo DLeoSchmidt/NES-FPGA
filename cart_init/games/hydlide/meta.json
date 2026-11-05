@@ -1,0 +1,14 @@
+{
+  "slug": "hydlide",
+  "title": "Hydlide",
+  "romFile": "Hydlide (U).nes",
+  "prgBanks": 2,
+  "prgSizeKB": 32,
+  "chrBanks": 1,
+  "chrSizeKB": 8,
+  "mapper": 0,
+  "mapperType": "NROM-256",
+  "mirroring": "Horizontal",
+  "hardwareCompatibility": "Compatível (Espelhamento Horizontal)",
+  "createdAt": "2026-11-05T02:54:16.033Z"
+}

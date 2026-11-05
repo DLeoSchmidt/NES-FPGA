@@ -1,0 +1,14 @@
+{
+  "slug": "spy-vs-spy",
+  "title": "Spy vs. Spy",
+  "romFile": "Spy Vs Spy (E) [!].nes",
+  "prgBanks": 2,
+  "prgSizeKB": 32,
+  "chrBanks": 1,
+  "chrSizeKB": 8,
+  "mapper": 0,
+  "mapperType": "NROM-256",
+  "mirroring": "Vertical",
+  "hardwareCompatibility": "Nativo (100% OK)",
+  "createdAt": "2026-11-05T02:54:16.229Z"
+}

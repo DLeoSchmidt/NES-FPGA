@@ -1,0 +1,14 @@
+{
+  "slug": "muscle",
+  "title": "M.U.S.C.L.E.: Tag Team Match",
+  "romFile": "M.U.S.C.L.E. (U).nes",
+  "prgBanks": 1,
+  "prgSizeKB": 16,
+  "chrBanks": 1,
+  "chrSizeKB": 8,
+  "mapper": 0,
+  "mapperType": "NROM-128",
+  "mirroring": "Vertical",
+  "hardwareCompatibility": "Nativo (100% OK)",
+  "createdAt": "2026-11-05T02:54:16.087Z"
+}
