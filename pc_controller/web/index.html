@@ -21,8 +21,11 @@
                 <select id="select-game" class="game-select" title="Selecione o jogo NROM (Mapper 0) para carregar">
                     <option value="" disabled selected>Carregando catálogo...</option>
                 </select>
-                <button id="btn-switch-game" class="btn-cart-switch" title="Atualiza prg.mif e chr.mif para o jogo selecionado">
-                    Trocar Jogo
+                <button id="btn-switch-game" class="btn-cart-switch" title="Apenas altera os arquivos MIF em cart_init/">
+                    Trocar MIF
+                </button>
+                <button id="btn-flash-game" class="btn-cart-flash" title="1-Click: Altera MIF + Recompila com Assembler + Grava na FPGA via Quartus CLI">
+                    ⚡ Gravar FPGA
                 </button>
             </div>
             <div class="top-actions">

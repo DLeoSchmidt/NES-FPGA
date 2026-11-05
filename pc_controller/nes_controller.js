@@ -16,12 +16,18 @@ const path = require('path');
 const { spawn } = require('child_process');
 const readline = require('readline');
 
-// Integração com o Switch Game de Cartuchos MIF
+// Integração com o Switch Game e Automação do Quartus CLI
 let switcher = null;
+let quartus = null;
 try {
     switcher = require('../cart_init/switch_game.js');
 } catch (e) {
     console.warn('[AVISO] Módulo switch_game.js não pôde ser carregado:', e.message);
+}
+try {
+    quartus = require('../cart_init/quartus_cli.js');
+} catch (e) {
+    console.warn('[AVISO] Módulo quartus_cli.js não pôde ser carregado:', e.message);
 }
 
 // Constantes de Máscara de Bits (NES)
@@ -159,7 +165,33 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // API REST - Troca Dinâmica de Jogo MIF
+    // API REST - Diagnóstico do Quartus Prime e Cabos JTAG
+    if (req.url === '/api/quartus/status') {
+        if (!quartus) {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Módulo quartus_cli indisponível' }));
+            return;
+        }
+        const toolchain = quartus.getBestToolchain();
+        const cables = toolchain.programmer ? quartus.listJtagCables(toolchain.programmer.pgm) : [];
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+            compiler: toolchain.compiler ? {
+                version: toolchain.compiler.version,
+                path: toolchain.compiler.binDir,
+                supportsMax10: toolchain.compiler.supportsMax10
+            } : null,
+            programmer: toolchain.programmer ? {
+                version: toolchain.programmer.version,
+                path: toolchain.programmer.pgm
+            } : null,
+            cables,
+            isFullyAutomated: toolchain.isFullyAutomated
+        }));
+        return;
+    }
+
+    // API REST - Troca Dinâmica de Jogo MIF e Automação Quartus
     if (req.url.startsWith('/api/switch-game')) {
         if (!switcher) {
             res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -168,17 +200,19 @@ const server = http.createServer((req, res) => {
         }
         const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
         const slug = parsedUrl.searchParams.get('slug');
+        const doFlash = parsedUrl.searchParams.get('flash') === '1' || parsedUrl.searchParams.get('flash') === 'true';
+
         if (!slug) {
             res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ success: false, error: 'Parâmetro slug ausente.' }));
             return;
         }
         try {
-            switcher.switchGame(slug);
+            switcher.switchGame(slug, { flash: doFlash });
             const active = switcher.getActiveGame();
             broadcastWsText(JSON.stringify({ type: 'game_changed', active }));
             res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-            res.end(JSON.stringify({ success: true, active }));
+            res.end(JSON.stringify({ success: true, active, flashed: doFlash }));
         } catch (err) {
             res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ success: false, error: err.message }));

@@ -646,6 +646,26 @@ h1 {
     transform: scale(0.96);
 }
 
+.btn-cart-flash {
+    background: #e65100;
+    color: #ffffff;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.05s ease;
+}
+
+.btn-cart-flash:hover {
+    background: #f57c00;
+}
+
+.btn-cart-flash:active {
+    transform: scale(0.96);
+}
+
 /* Modal de Troca de Jogo */
 .modal-body-switch {
     display: flex;

@@ -16,6 +16,13 @@
 const fs = require('fs');
 const path = require('path');
 
+let quartus = null;
+try {
+    quartus = require('./quartus_cli.js');
+} catch (e) {
+    // fallback se quartus_cli não estiver disponível
+}
+
 const targetDir = __dirname;
 const gamesDir = path.join(targetDir, 'games');
 const catalogPath = path.join(gamesDir, 'catalog.json');
@@ -93,16 +100,20 @@ function printCatalog(games, activeSlug = '') {
     if (activeSlug) {
         console.log(`(*) Jogo atualmente ativo: '${activeSlug}'`);
     }
-    console.log('\nComandos rápidos:');
-    console.log('  node cart_init/switch_game.js <slug>         -> Ativar jogo');
-    console.log('  node cart_init/switch_game.js search <nome>  -> Buscar jogo');
+    console.log('\nComandos de Troca e Automação:');
+    console.log('  node cart_init/switch_game.js <slug>              -> Ativar jogo (apenas copia MIFs)');
+    console.log('  node cart_init/switch_game.js <slug> --build      -> Ativar jogo + Recompilar (update_mif + asm)');
+    console.log('  node cart_init/switch_game.js <slug> --flash (-a) -> 1-Click: Ativar + Recompilar + Gravar na FPGA');
+    console.log('  node cart_init/switch_game.js flash               -> Gravar bitstream atual via Programmer');
+    console.log('  node cart_init/switch_game.js quartus             -> Diagnóstico do Quartus e cabos JTAG');
+    console.log('  node cart_init/switch_game.js search <nome>       -> Buscar jogo no catálogo');
     console.log('='.repeat(78));
 }
 
 /**
  * Alterna os arquivos MIF ativos para o jogo solicitado.
  */
-function switchGame(slug) {
+function switchGame(slug, { build = false, flash = false } = {}) {
     const catalog = loadCatalog();
     const cleanSlug = slug.toLowerCase().trim();
 
@@ -166,7 +177,23 @@ function switchGame(slug) {
         console.log(` Espelhamento:      ${target.mirroring}`);
         console.log(` Compatibilidade:   ${target.hardwareCompatibility || 'Compatível'}`);
         console.log('='.repeat(70));
-        console.log('\nFLUXO RÁPIDO PARA GRAVAR NA FPGA (Sem resintetizar todo o projeto):');
+
+        // Se solicitado build ou flash via terminal, executa o pipeline automático
+        if (build || flash) {
+            if (quartus) {
+                quartus.runPipeline({
+                    switchMif: false,
+                    doUpdateMif: true,
+                    doAsm: true,
+                    doFlash: flash
+                });
+            } else {
+                console.warn('[AVISO] Módulo quartus_cli não disponível para automação.');
+            }
+            return target;
+        }
+
+        console.log('\nFLUXO MANUAL NO INTEL QUARTUS (ou use `--flash` para automação total):');
         console.log('  1. No Intel Quartus Prime:');
         console.log('     Processing -> Update Memory Initialization File (Ctrl+Shift+U)');
         console.log('  2. Iniciar o Assembler:');
@@ -174,6 +201,7 @@ function switchGame(slug) {
         console.log('  3. Gravar na Placa DE10-Lite:');
         console.log('     Tools -> Programmer -> Start (gravar o arquivo .sof atualizado)');
         console.log('='.repeat(70));
+        return target;
     } catch (err) {
         console.error(`[ERRO] Falha ao alternar arquivos: ${err.message}`);
         process.exit(1);
@@ -208,8 +236,49 @@ if (require.main === module) {
         );
         const active = getActiveGame();
         printCatalog(filtered, active ? active.slug : '');
+    } else if (command === 'quartus') {
+        if (quartus) {
+            // Executa diagnóstico completo
+            const { all, compiler, programmer } = quartus.getBestToolchain();
+            console.log('='.repeat(70));
+            console.log('            DIAGNÓSTICO DO INTEL QUARTUS NO SISTEMA                ');
+            console.log('='.repeat(70));
+            for (const inst of all) {
+                const tags = [];
+                if (inst.hasCompiler) tags.push('Compilador');
+                if (inst.hasProgrammer) tags.push('Programmer');
+                if (inst.supportsMax10) tags.push('MAX 10 OK');
+                console.log(`  - Versão: ${inst.version.padEnd(16)} [${tags.join(', ')}] -> ${inst.binDir}`);
+            }
+            console.log('\nCompilador Ativo: ' + (compiler ? `${compiler.version} (${compiler.binDir})` : 'Nenhum'));
+            console.log('Programmer Ativo: ' + (programmer ? `${programmer.version} (${programmer.pgm})` : 'Nenhum'));
+            if (programmer) {
+                const cables = quartus.listJtagCables(programmer.pgm);
+                console.log(`Cabos JTAG Detectados: ${cables.length > 0 ? cables.join(', ') : 'Nenhum cabo conectado.'}`);
+            }
+            console.log('='.repeat(70));
+        } else {
+            console.error('[ERRO] Módulo quartus_cli não encontrado.');
+        }
+    } else if (command === 'flash') {
+        if (quartus) {
+            const { programmer } = quartus.getBestToolchain();
+            quartus.programFpga(programmer);
+        } else {
+            console.error('[ERRO] Módulo quartus_cli não encontrado.');
+        }
+    } else if (command === 'build') {
+        if (quartus) {
+            const { compiler } = quartus.getBestToolchain();
+            quartus.updateMif(compiler);
+            quartus.runAssembler(compiler);
+        } else {
+            console.error('[ERRO] Módulo quartus_cli não encontrado.');
+        }
     } else {
-        switchGame(command);
+        const doBuild = args.includes('--build');
+        const doFlash = args.includes('--flash') || args.includes('-a') || args.includes('--all');
+        switchGame(command, { build: doBuild, flash: doFlash });
     }
 }
 

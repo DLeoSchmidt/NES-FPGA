@@ -89,6 +89,7 @@ const ui = {
     // Elementos do Cartridge Switcher
     selectGame: document.getElementById('select-game'),
     btnSwitchGame: document.getElementById('btn-switch-game'),
+    btnFlashGame: document.getElementById('btn-flash-game'),
     switchModal: document.getElementById('switch-modal'),
     modalGameName: document.getElementById('modal-game-name'),
     badgeMapper: document.getElementById('badge-mapper'),
@@ -474,9 +475,42 @@ async function setupGameSwitcher() {
                 alert('Erro de rede ao trocar jogo: ' + err.message);
             } finally {
                 ui.btnSwitchGame.disabled = false;
-                ui.btnSwitchGame.textContent = 'Trocar Jogo';
+                ui.btnSwitchGame.textContent = 'Trocar MIF';
             }
         });
+
+        if (ui.btnFlashGame) {
+            ui.btnFlashGame.addEventListener('click', async () => {
+                const slug = ui.selectGame.value;
+                if (!slug) return;
+
+                ui.btnFlashGame.disabled = true;
+                ui.btnFlashGame.textContent = 'Gravando...';
+
+                try {
+                    const switchResp = await fetch(`/api/switch-game?slug=${encodeURIComponent(slug)}&flash=1`);
+                    const result = await switchResp.json();
+
+                    if (result.success && result.active) {
+                        const act = result.active;
+                        ui.modalGameName.textContent = act.title;
+                        ui.badgeMapper.textContent = act.mapperType || 'Mapper 0';
+                        ui.badgeMirror.textContent = `Espelhamento: ${act.mirroring}`;
+                        ui.badgePrg.textContent = `PRG: ${act.prgSizeKB || 32} KB`;
+                        ui.badgeChr.textContent = `CHR: ${act.chrSizeKB || 8} KB`;
+
+                        ui.switchModal.classList.remove('hidden');
+                    } else {
+                        alert('Aviso da gravação via terminal: ' + (result.error || 'Falha'));
+                    }
+                } catch (err) {
+                    alert('Erro de rede: ' + err.message);
+                } finally {
+                    ui.btnFlashGame.disabled = false;
+                    ui.btnFlashGame.textContent = '⚡ Gravar FPGA';
+                }
+            });
+        }
 
         // Fechamento do modal de instruções
         if (ui.btnCloseSwitchModal) {
