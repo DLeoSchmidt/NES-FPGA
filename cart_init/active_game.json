@@ -1,15 +1,15 @@
 {
-  "slug": "excitebike",
-  "title": "Excitebike",
-  "romFile": "Excitebike (JU) [!].nes",
-  "prgBanks": 1,
-  "prgSizeKB": 16,
+  "slug": "smb",
+  "title": "Super Mario Bros.",
+  "romFile": "Super Mario Bros. (JU) (PRG0) [!].nes",
+  "prgBanks": 2,
+  "prgSizeKB": 32,
   "chrBanks": 1,
   "chrSizeKB": 8,
   "mapper": 0,
-  "mapperType": "NROM-128",
+  "mapperType": "NROM-256",
   "mirroring": "Vertical",
   "hardwareCompatibility": "Nativo (100% OK)",
-  "createdAt": "2026-11-05T02:54:15.981Z",
-  "activatedAt": "2026-11-07T17:01:19.721Z"
+  "createdAt": "2026-11-05T02:54:16.256Z",
+  "activatedAt": "2026-11-07T17:42:25.771Z"
 }

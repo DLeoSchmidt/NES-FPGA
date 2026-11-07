@@ -211,6 +211,7 @@ controller controller (
 	.addr	(cpu_addr[15:0]),
 	.keycode	(keycode),
 	.wren	(~cpu_read),
+	.din	(cpu_dout),
 	.dout	(controller_dout)
 );
 
