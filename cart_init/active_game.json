@@ -1,7 +1,7 @@
 {
-  "slug": "bomberman",
-  "title": "Bomberman",
-  "romFile": "Bomberman (U).nes",
+  "slug": "donkey-kong-3",
+  "title": "Donkey Kong 3",
+  "romFile": "Donkey Kong 3 (JUE).nes",
   "prgBanks": 1,
   "prgSizeKB": 16,
   "chrBanks": 1,
@@ -10,6 +10,6 @@
   "mapperType": "NROM-128",
   "mirroring": "Vertical",
   "hardwareCompatibility": "Nativo (100% OK)",
-  "createdAt": "2026-11-05T02:54:15.858Z",
-  "activatedAt": "2026-11-07T15:01:22.680Z"
+  "createdAt": "2026-11-05T02:54:15.936Z",
+  "activatedAt": "2026-11-07T15:03:09.800Z"
 }

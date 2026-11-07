@@ -276,6 +276,13 @@ function downloadNiosFirmware(cableName = null, onLog = console.log) {
     const targetCable = cableName || (cables.length > 0 ? cables[0] : 'USB-Blaster [USB-0]');
     const normalizedElf = elfPath.replace(/\\/g, '/');
 
+    // Libera a porta JTAG garantindo que o nios2-terminal não a mantenha presa
+    if (process.platform === 'win32') {
+        try {
+            spawnSync('taskkill', ['/F', '/IM', 'nios2-terminal.exe'], { stdio: 'ignore', timeout: 2000 });
+        } catch {}
+    }
+
     onLog(`[NIOS II] Transferindo '${path.basename(elfPath)}' para a SDRAM via '${targetCable}'...`);
     const psCommand = `& '${niosShell}' nios2-download -g -c '${targetCable}' '${normalizedElf}'`;
 
@@ -331,6 +338,14 @@ function programFpga(programmer, cableName = null, onLog = console.log, { requir
     }
 
     onLog(`[QUARTUS] Gravando bitstream na FPGA via cabo '${targetCable}'...`);
+
+    // Libera a porta JTAG garantindo que o nios2-terminal não a mantenha presa
+    if (process.platform === 'win32') {
+        try {
+            spawnSync('taskkill', ['/F', '/IM', 'nios2-terminal.exe'], { stdio: 'ignore', timeout: 2000 });
+        } catch {}
+    }
+
     const args = ['-c', targetCable, '-m', 'JTAG', '-o', `p;${finalSof}`];
     const res = spawnSync(programmer.pgm, args, {
         cwd: PROJECT_ROOT,

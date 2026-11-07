@@ -353,6 +353,12 @@ window.addEventListener('keydown', (e) => {
         return;
     }
 
+    // Suporte universal a Enter / NumpadEnter como Start para P1
+    if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+        e.preventDefault();
+        pressedPhysicalKeys.add(keyBindings.p1.start);
+    }
+
     // Previne rolagem de setas/espaço se a tecla pertencer a um jogador ativo
     const isBoundKey = Object.values(keyBindings.p1).includes(e.code) || Object.values(keyBindings.p2).includes(e.code);
     if (isBoundKey) {
@@ -362,6 +368,9 @@ window.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('keyup', (e) => {
+    if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+        pressedPhysicalKeys.delete(keyBindings.p1.start);
+    }
     pressedPhysicalKeys.delete(e.code);
 });
 
@@ -378,7 +387,7 @@ window.addEventListener('blur', () => {
  */
 function setupTouchControls() {
     document.querySelectorAll('[data-btn]').forEach((btn) => {
-        const player = btn.dataset.player;
+        const player = btn.dataset.player || (btn.closest('[data-player]') ? btn.closest('[data-player]').dataset.player : 'p1');
         const btnType = btn.dataset.btn;
         const targetSet = (player === 'p1') ? p1TouchButtons : p2TouchButtons;
 

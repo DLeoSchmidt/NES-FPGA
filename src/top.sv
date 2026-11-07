@@ -208,7 +208,7 @@ ram ram (
 logic [7:0] controller_dout;
 controller controller (
 	.clk	(cpu_clk),
-	.addr	(cpu_addr),
+	.addr	(cpu_addr[15:0]),
 	.keycode	(keycode),
 	.wren	(~cpu_read),
 	.dout	(controller_dout)
@@ -345,9 +345,9 @@ always_comb begin
 	ppu_din = cpu_dout;
 	ppu_wren = ~cpu_read;
 	
-	if (cpu_addr >= 16'h2000 && cpu_addr <= 16'h3FFF) begin
+	if (cpu_addr[15:0] >= 16'h2000 && cpu_addr[15:0] <= 16'h3FFF) begin
 		databus = ppu_dout;
-	end else if (16'h4016 <= cpu_addr && cpu_addr <= 16'h4017) begin
+	end else if (cpu_addr[15:0] == 16'h4016 || cpu_addr[15:0] == 16'h4017) begin
 		databus = controller_dout;
 	end else begin
 		databus = ram_dout;
