@@ -14,6 +14,7 @@
                 <div class="brand">
                     <h1>NES-FPGA Dual Controller</h1>
                     <span class="badge-system">2-Player Core</span>
+                    <span id="badge-transport" class="badge-transport" title="Canal ativo de comunicação com a FPGA">IP Intel JTAG UART</span>
                 </div>
                 <div class="top-actions">
                     <button id="btn-open-settings" class="btn-primary">
@@ -26,7 +27,7 @@
                 </div>
             </div>
 
-            <!-- Linha de Ferramentas: Cartuchos e Conexão Serial DB9 -->
+            <!-- Linha de Ferramentas: Cartuchos e Métodos de Entrada -->
             <div class="header-tools-row">
                 <div class="cartridge-switch-bar">
                     <div class="cart-label">
@@ -51,14 +52,14 @@
 
                 <div class="serial-switch-bar">
                     <div class="serial-label">
-                        <span class="serial-icon" title="Porta Serial RS-232 / DB9">🔌</span>
-                        <span class="serial-title">Serial DB9:</span>
+                        <span class="serial-icon" title="Método de Transporte / IP de Entrada">📡</span>
+                        <span class="serial-title">Canal:</span>
                     </div>
-                    <select id="select-serial-port" class="serial-select" title="Selecione a porta Serial COM (conector DB9 ou conversor USB-Serial)">
-                        <option value="">JTAG UART (USB-Blaster)</option>
+                    <select id="select-serial-port" class="serial-select" title="Selecione o canal de transporte: IP JTAG UART (Nativo) ou Serial DB9 (RS-232)">
+                        <option value="">IP JTAG UART (USB-Blaster)</option>
                     </select>
-                    <button id="btn-toggle-serial" class="btn-serial" title="Conectar conector Serial DB9 / RS-232">
-                        Conectar DB9
+                    <button id="btn-toggle-serial" class="btn-serial" title="Alternar entre IP JTAG UART e conector Serial DB9 / RS-232">
+                        Ativar DB9
                     </button>
                 </div>
             </div>

@@ -139,16 +139,36 @@ function findNiosTerminal() {
 // Gerenciador de Comunicação Serial RS-232 / DB9 (Nativo Windows)
 let serialBridgeProcess = null;
 let serialPortConfig = null;
+let defaultTransportMethod = 'jtag_uart'; // 'jtag_uart' | 'serial'
 
-// Parseia argumentos CLI: --serial COM1 --baud 115200
+// Parseia argumentos CLI:
+// --method [jtag_uart|serial]
+// --jtag / --jtag-uart
+// --serial COM1 --baud 115200
 for (let i = 2; i < process.argv.length; i++) {
     const arg = process.argv[i].toLowerCase();
-    if ((arg === '--serial' || arg === '-s') && process.argv[i + 1]) {
+    if (arg === '--help' || arg === '-h') {
+        console.log('Uso: node nes_controller.js [opções]');
+        console.log('Opções:');
+        console.log('  --method <jtag_uart|serial>   Seleciona o método de transporte (padrão: jtag_uart)');
+        console.log('  --jtag-uart, --jtag           Ativa o método IP Intel Altera JTAG UART (USB-Blaster)');
+        console.log('  --serial, -s <PORT>           Ativa o método Porta Serial DB9 / RS-232 (ex: COM3)');
+        console.log('  --baud, -b <BAUD>             Baud rate da porta serial (padrão: 115200)');
+        process.exit(0);
+    } else if (arg === '--method' && process.argv[i + 1]) {
+        defaultTransportMethod = process.argv[++i].toLowerCase();
+    } else if (arg.startsWith('--method=')) {
+        defaultTransportMethod = arg.split('=')[1].toLowerCase();
+    } else if (arg === '--jtag' || arg === '--jtag-uart' || arg === '--jtag_uart') {
+        defaultTransportMethod = 'jtag_uart';
+    } else if ((arg === '--serial' || arg === '-s') && process.argv[i + 1]) {
+        defaultTransportMethod = 'serial';
         serialPortConfig = {
             port: process.argv[++i].toUpperCase(),
             baud: 115200
         };
     } else if (arg.startsWith('--serial=')) {
+        defaultTransportMethod = 'serial';
         serialPortConfig = {
             port: arg.split('=')[1].toUpperCase(),
             baud: 115200
@@ -499,13 +519,16 @@ function sendDualMaskToFPGA(p1, p2) {
  * Envia o status atual do hardware para todos os clientes Web via WebSocket.
  */
 function broadcastHardwareStatus() {
+    const activeMethod = serialBridgeProcess ? 'serial' : (isFpgaConnected ? 'jtag_uart' : 'simulation');
     const payload = JSON.stringify({
         type: 'hardware_status',
         fpgaConnected: isFpgaConnected,
         cableName: currentCableName,
         niosActive: Boolean(niosProcess && niosBridgeActive),
         serialConnected: Boolean(serialBridgeProcess),
-        serialPort: serialPortConfig ? serialPortConfig.port : null
+        serialPort: serialPortConfig ? serialPortConfig.port : null,
+        transportMethod: activeMethod,
+        ipName: 'altera_avalon_jtag_uart (Intel JTAG UART)'
     });
 
     for (const ws of wsClients) {
@@ -814,13 +837,16 @@ server.on('upgrade', (req, socket) => {
 
     // Envia estado atual dos controles e do hardware para o novo cliente
     sendWsText(socket, JSON.stringify({ type: 'state2', p1: currentP1Mask, p2: currentP2Mask }));
+    const activeMethod = serialBridgeProcess ? 'serial' : (isFpgaConnected ? 'jtag_uart' : 'simulation');
     sendWsText(socket, JSON.stringify({
         type: 'hardware_status',
         fpgaConnected: isFpgaConnected,
         cableName: currentCableName,
         niosActive: Boolean(niosProcess && niosBridgeActive),
         serialConnected: Boolean(serialBridgeProcess),
-        serialPort: serialPortConfig ? serialPortConfig.port : null
+        serialPort: serialPortConfig ? serialPortConfig.port : null,
+        transportMethod: activeMethod,
+        ipName: 'altera_avalon_jtag_uart (Intel JTAG UART)'
     }));
 
     if (switcher) {
@@ -935,11 +961,12 @@ function setupTerminalKeyboard() {
         process.stdin.setRawMode(true);
     }
 
-    console.log('\n' + '='.repeat(70));
-    console.log('       NES-FPGA DUAL CONTROLLER - NODE.JS & WEB BRIDGE SERVER       ');
-    console.log('='.repeat(70));
+    console.log('\n' + '='.repeat(72));
+    console.log('       NES-FPGA DUAL CONTROLLER - NODE.JS & WEB BRIDGE SERVER');
+    console.log('='.repeat(72));
     if (isFpgaConnected) {
         console.log(` [STATUS HARDWARE] Placa DE10-Lite CONECTADA (${currentCableName})`);
+        console.log(` [MÉTODO DE TRANSPORTE] IP Intel JTAG UART (altera_avalon_jtag_uart) via USB-Blaster`);
         console.log(` [MODO OPERACIONAL] FPGA REAL - Controles e Displays de 7 segmentos ativos`);
     } else {
         console.log(' [STATUS HARDWARE] Nenhuma placa DE10-Lite detectada via USB-Blaster');
@@ -949,10 +976,10 @@ function setupTerminalKeyboard() {
     console.log(' [P1 - Teclado Console] WASD (Dir) | K (A) | J (B) | Enter (Start) | U (Sel)');
     console.log(' [P2 - Teclado Console] Setas (Dir) | X (A) | Z (B) | Numpad5 | Numpad4');
     if (serialBridgeProcess) {
-        console.log(` [SERIAL] Porta DB9 / RS-232 Ativa: ${serialPortConfig.port}`);
+        console.log(` [MÉTODO EXTRA] Porta Serial DB9 / RS-232 Ativa: ${serialPortConfig.port}`);
     }
     console.log(' [SAIR] Ctrl+C ou ESC');
-    console.log('='.repeat(70) + '\n');
+    console.log('='.repeat(72) + '\n');
 
     const activeTimers = new Map();
 

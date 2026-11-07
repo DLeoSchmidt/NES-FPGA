@@ -1,7 +1,7 @@
 {
-  "slug": "bomberman",
-  "title": "Bomberman",
-  "romFile": "Bomberman (U).nes",
+  "slug": "excitebike",
+  "title": "Excitebike",
+  "romFile": "Excitebike (JU) [!].nes",
   "prgBanks": 1,
   "prgSizeKB": 16,
   "chrBanks": 1,
@@ -10,6 +10,6 @@
   "mapperType": "NROM-128",
   "mirroring": "Vertical",
   "hardwareCompatibility": "Nativo (100% OK)",
-  "createdAt": "2026-11-05T02:54:15.858Z",
-  "activatedAt": "2026-11-07T15:58:28.856Z"
+  "createdAt": "2026-11-05T02:54:15.981Z",
+  "activatedAt": "2026-11-07T17:01:19.721Z"
 }

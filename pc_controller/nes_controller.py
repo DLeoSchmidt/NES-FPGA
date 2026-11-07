@@ -321,51 +321,86 @@ class SerialDb9Bridge:
 
 
 def run_interactive_controller():
-    # Processa argumentos de linha de comando: --serial COMx --baud 115200
+    # Processa argumentos de linha de comando:
+    # --method [jtag_uart|serial]
+    # --jtag / --jtag-uart
+    # --serial COMx --baud 115200
+    # --cable "USB-Blaster [USB-0]"
+    method = "jtag_uart"
     serial_port = None
     serial_baud = 115200
+    cable_override = None
 
     i = 1
     while i < len(sys.argv):
         arg = sys.argv[i].lower()
-        if (arg == "--serial" or arg == "-s") and i + 1 < len(sys.argv):
+        if arg in ("--help", "-h"):
+            print("Uso: nes_controller.py [opções]")
+            print("Opções:")
+            print("  --method <jtag_uart|serial>   Seleciona o método de transporte (padrão: jtag_uart)")
+            print("  --jtag-uart, --jtag           Ativa o método IP Intel Altera JTAG UART (USB-Blaster)")
+            print("  --serial, -s <PORT>           Ativa o método Porta Serial DB9 / RS-232 (ex: COM3)")
+            print("  --baud, -b <BAUD>             Baud rate da porta serial (padrão: 115200)")
+            print("  --cable, -c <CABLE>           Nome específico do cabo USB-Blaster")
+            sys.exit(0)
+        elif arg == "--method" and i + 1 < len(sys.argv):
+            method = sys.argv[i + 1].lower()
+            i += 1
+        elif arg.startswith("--method="):
+            method = arg.split("=")[1].lower()
+        elif arg in ("--jtag", "--jtag-uart", "--jtag_uart"):
+            method = "jtag_uart"
+        elif (arg == "--serial" or arg == "-s") and i + 1 < len(sys.argv):
             serial_port = sys.argv[i + 1].upper()
+            method = "serial"
             i += 1
         elif arg.startswith("--serial="):
             serial_port = arg.split("=")[1].upper()
+            method = "serial"
         elif (arg == "--baud" or arg == "-b") and i + 1 < len(sys.argv):
             try:
                 serial_baud = int(sys.argv[i + 1])
             except ValueError:
                 pass
             i += 1
+        elif (arg == "--cable" or arg == "-c") and i + 1 < len(sys.argv):
+            cable_override = sys.argv[i + 1]
+            i += 1
         i += 1
 
-    # 1. Ponte JTAG UART (Cabo USB-Blaster)
-    bridge = NiosTerminalBridge()
-    has_bridge = bridge.connect()
+    # 1. Ponte IP Intel JTAG UART (Cabo USB-Blaster)
+    bridge = None
+    if method == "jtag_uart" or not serial_port:
+        bridge = NiosTerminalBridge()
+        if cable_override:
+            bridge.cable_name = cable_override
+        has_bridge = bridge.connect()
 
-    # 2. Ponte Serial DB9 / RS-232 (se configurada)
+    # 2. Ponte Serial DB9 / RS-232 (se configurada ou selecionada)
     serial_bridge = None
-    if serial_port:
-        serial_bridge = SerialDb9Bridge(serial_port, serial_baud)
+    if serial_port or method == "serial":
+        target_port = serial_port or "COM1"
+        serial_bridge = SerialDb9Bridge(target_port, serial_baud)
         serial_bridge.connect()
 
-    print("\n" + "=" * 70)
-    print("      NES-FPGA DUAL CONTROLLER - PYTHON CONSOLE EDITION      ")
-    print("=" * 70)
-    if bridge.connected:
+    print("\n" + "=" * 72)
+    print("       NES-FPGA DUAL CONTROLLER - PYTHON CONSOLE EDITION")
+    print("=" * 72)
+    if bridge and bridge.connected:
         print(f" [STATUS HARDWARE] Placa DE10-Lite CONECTADA ({bridge.cable_name})")
+        print(" [MÉTODO DE TRANSPORTE] IP Intel JTAG UART (altera_avalon_jtag_uart) via USB-Blaster")
         print(" [MODO OPERACIONAL] FPGA REAL - Controles e Displays de 7 segmentos ativos")
+    elif serial_bridge and serial_bridge.connected:
+        print(f" [STATUS HARDWARE] Porta Serial DB9 Conectada: {serial_port} @ {serial_baud} bps")
+        print(" [MÉTODO DE TRANSPORTE] Porta Serial RS-232 / Conector DB9")
+        print(" [MODO OPERACIONAL] FPGA REAL via Conector Serial")
     else:
-        print(" [STATUS HARDWARE] Nenhuma placa DE10-Lite detectada via USB-Blaster")
-        print(" [MODO OPERACIONAL] SIMULACAO / CONSOLE - Pressione teclas para testar localmente")
+        print(" [STATUS HARDWARE] Nenhuma placa DE10-Lite detectada via USB-Blaster/Serial")
+        print(" [MODO OPERACIONAL] SIMULAÇÃO / CONSOLE - Pressione teclas para testar localmente")
     print(" Player 1: WASD (Direcional) | K (A) | J (B) | Enter (Start) | U (Select)")
     print(" Player 2: Setas (Direcional) | X (A) | Z (B) | Numpad5 | Numpad4")
-    if serial_bridge and serial_bridge.connected:
-        print(f" Conexao Serial DB9 Ativa: {serial_port} @ {serial_baud} bps")
     print(" Sair: ESC ou Q")
-    print("=" * 70 + "\n")
+    print("=" * 72 + "\n")
 
     p1_mask = 0
     p2_mask = 0
@@ -422,7 +457,7 @@ def run_interactive_controller():
 
                 now = time.time()
                 # Watchdog de reconexao automatica (a cada 3s se desconectado)
-                if not bridge.connected and (now - last_reconnect_check > 3.0):
+                if bridge and not bridge.connected and (now - last_reconnect_check > 3.0):
                     last_reconnect_check = now
                     bridge.connect()
 
@@ -449,7 +484,7 @@ def run_interactive_controller():
 
                 # Envia atualização apenas quando houver mudança de estado (taxa de amostragem: ~60 Hz)
                 if p1 != last_p1 or p2 != last_p2:
-                    if bridge.connected:
+                    if bridge and bridge.connected:
                         bridge.send_dual_mask(p1, p2)
                     if serial_bridge and serial_bridge.connected:
                         serial_bridge.send_dual_mask(p1, p2)
@@ -462,7 +497,7 @@ def run_interactive_controller():
         except KeyboardInterrupt:
             pass
         finally:
-            if bridge.connected:
+            if bridge and bridge.connected:
                 bridge.send_dual_mask(0, 0)
                 bridge.close()
             if serial_bridge and serial_bridge.connected:

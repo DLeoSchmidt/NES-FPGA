@@ -70,6 +70,22 @@ class JtagAtlanticNative:
         self._close.argtypes = [ctypes.c_void_p]
         self._close.restype = None
 
+        # ?jtagatlantic_get_error@@YA?AW4JATL_ERROR@@PEAPEBD@Z
+        try:
+            self._get_error = getattr(self.dll, '?jtagatlantic_get_error@@YA?AW4JATL_ERROR@@PEAPEBD@Z')
+            self._get_error.argtypes = [ctypes.POINTER(ctypes.c_char_p)]
+            self._get_error.restype = ctypes.c_int
+        except Exception:
+            self._get_error = None
+
+    def get_last_error(self):
+        if not self._get_error:
+            return None, ""
+        info_ptr = ctypes.c_char_p()
+        code = self._get_error(ctypes.byref(info_ptr))
+        info_msg = info_ptr.value.decode('utf-8', errors='ignore') if info_ptr.value else ""
+        return code, info_msg
+
     def connect(self) -> bool:
         cable_bytes = self.cable_name.encode('utf-8') if self.cable_name else None
         self.handle = self._open(cable_bytes, -1, -1, b"nes_bridge")
@@ -107,7 +123,11 @@ def main():
     try:
         bridge = JtagAtlanticNative(cable)
         if not bridge.connect():
-            sys.stderr.write(f"[JTAG_BRIDGE] Falha ao conectar ao cabo '{cable}'.\n")
+            err_code, err_msg = bridge.get_last_error()
+            if err_code == -6:
+                sys.stderr.write(f"[JTAG_BRIDGE] Canal JTAG Atlantic em '{cable}' já está aberto por outro processo.\n")
+            else:
+                sys.stderr.write(f"[JTAG_BRIDGE] Falha ao conectar ao cabo '{cable}' (Erro {err_code}).\n")
             sys.stderr.flush()
             sys.exit(1)
         sys.stdout.write(f"[JTAG_BRIDGE_READY] Conectado nativamente a {cable}\n")

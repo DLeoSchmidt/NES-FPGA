@@ -183,11 +183,33 @@ function connectWebSocket() {
 function updateHardwareStatus(data) {
     if (!ui.status || !ui.indicator) return;
 
+    const badgeTransport = document.getElementById('badge-transport');
+
+    if (data.serialConnected) {
+        if (badgeTransport) {
+            badgeTransport.className = 'badge-transport serial';
+            badgeTransport.textContent = `Serial DB9 (${data.serialPort || 'COM'})`;
+            badgeTransport.title = `Transmissão ativa via conector Serial DB9 / RS-232 em ${data.serialPort}`;
+        }
+    } else if (data.fpgaConnected) {
+        if (badgeTransport) {
+            badgeTransport.className = 'badge-transport';
+            badgeTransport.textContent = 'IP Intel JTAG UART';
+            badgeTransport.title = `Transmissão ativa via IP Intel altera_avalon_jtag_uart (${data.cableName || 'USB-Blaster'})`;
+        }
+    } else {
+        if (badgeTransport) {
+            badgeTransport.className = 'badge-transport simulation';
+            badgeTransport.textContent = 'Modo Simulação';
+            badgeTransport.title = 'Sem placa conectada: teclado e gamepad locais simulados';
+        }
+    }
+
     if (data.fpgaConnected) {
         ui.indicator.className = 'dot connected';
         const cable = data.cableName ? data.cableName.replace(/\[.*\]/, '').trim() : 'DE10-Lite';
         ui.status.textContent = `DE10-Lite Conectada (${data.cableName || 'USB-0'})`;
-        ui.status.title = `Modo FPGA REAL ativo via ${data.cableName}. Nios II ${data.niosActive ? 'sincronizado' : 'iniciando'}.`;
+        ui.status.title = `Modo FPGA REAL ativo via ${data.cableName}. Nios II ${data.niosActive ? 'sincronizado' : 'iniciando'}. IP altera_avalon_jtag_uart operacional.`;
     } else {
         ui.indicator.className = 'dot simulation';
         ui.status.textContent = 'Modo Simulação (Placa desconectada)';
@@ -689,7 +711,7 @@ async function setupSerialManager() {
             const data = await resp.json();
             const ports = data.ports || [];
 
-            selectPort.innerHTML = '<option value="">JTAG UART (USB-Blaster)</option>';
+            selectPort.innerHTML = '<option value="">IP Intel JTAG UART (USB-Blaster)</option>';
             for (const p of ports) {
                 const opt = document.createElement('option');
                 opt.value = p;
@@ -702,11 +724,11 @@ async function setupSerialManager() {
 
             if (data.connected && data.active) {
                 isSerialConnected = true;
-                btnToggle.textContent = 'Desconectar DB9';
-                btnToggle.style.background = '#ef4444';
+                btnToggle.textContent = 'Voltar para JTAG UART';
+                btnToggle.style.background = '#8b5cf6';
             } else {
                 isSerialConnected = false;
-                btnToggle.textContent = 'Conectar DB9';
+                btnToggle.textContent = 'Ativar Serial DB9';
                 btnToggle.style.background = '#3b82f6';
             }
         } catch {
