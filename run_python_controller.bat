@@ -14,16 +14,24 @@ where python >nul 2>nul
 if %errorlevel% equ 0 (
     set "PYTHON_CMD=python"
 ) else (
-    if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" (
-        set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
-        set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python311"
+    if exist "C:\Python313\python.exe" (
+        set "PYTHON_CMD=C:\Python313\python.exe"
+        set "PATH=%PATH%;C:\Python313"
+    ) else if exist "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" (
+        set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
+        set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python313"
     ) else if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
         set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
         set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python312"
-    ) else if exist "C:\Python311\python.exe" (
-        set "PYTHON_CMD=C:\Python311\python.exe"
+    ) else if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" (
+        set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
+        set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python311"
     ) else if exist "C:\Python312\python.exe" (
         set "PYTHON_CMD=C:\Python312\python.exe"
+        set "PATH=%PATH%;C:\Python312"
+    ) else if exist "C:\Python311\python.exe" (
+        set "PYTHON_CMD=C:\Python311\python.exe"
+        set "PATH=%PATH%;C:\Python311"
     )
 )
 

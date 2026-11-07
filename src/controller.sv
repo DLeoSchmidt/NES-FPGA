@@ -30,23 +30,21 @@ logic [7:0] data2;
 wire [7:0] p1_din = keycode[7:0];
 wire [7:0] p2_din = keycode[15:8];
 
-// Leitura assíncrona/combinacional:
-// Garante que o barramento de dados 'databus' da CPU 6502 tenha o dado
-// estável e correto IMEDIATAMENTE durante o ciclo de leitura, sem atraso de flip-flop.
-assign dout = (addr == 16'h4017) ? {7'h00, data2[7]} : {7'h00, data1[7]};
-
 always_ff @ (posedge clk) begin
 	if (addr == 16'h4016 && wren) begin
 		// Strobe do NES (escrita em $4016):
-		// Recarrega os shift registers com o estado atual dos botões
-		data1 <= p1_din;
-		data2 <= p2_din;
+		// Recarrega os shift registers e já disponibiliza o primeiro bit (Botão A)
+		data1 <= p1_din << 1;
+		data2 <= p2_din << 1;
+		dout  <= {7'h00, p1_din[7]};
 	end else if (~wren) begin
 		if (addr == 16'h4016) begin
-			// Leitura serial do Player 1: desloca o registrador e preenche com 1
+			// Leitura serial do Player 1: expõe o bit atual e prepara o próximo
+			dout  <= {7'h00, data1[7]};
 			data1 <= {data1[6:0], 1'b1};
 		end else if (addr == 16'h4017) begin
-			// Leitura serial do Player 2: desloca o registrador e preenche com 1
+			// Leitura serial do Player 2: expõe o bit atual e prepara o próximo
+			dout  <= {7'h00, data2[7]};
 			data2 <= {data2[6:0], 1'b1};
 		end
 	end

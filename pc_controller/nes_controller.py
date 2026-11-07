@@ -19,6 +19,14 @@ import subprocess
 import re
 from typing import Optional, List
 
+try:
+    from jtag_bridge import JtagAtlanticNative
+except ImportError:
+    try:
+        from pc_controller.jtag_bridge import JtagAtlanticNative
+    except ImportError:
+        JtagAtlanticNative = None
+
 # Mascaras de Bits para o Controle NES
 BTN_RIGHT  = 1 << 0
 BTN_LEFT   = 1 << 1
@@ -76,6 +84,7 @@ class NiosTerminalBridge:
     def __init__(self, terminal_path: Optional[str] = None):
         self.terminal_path = terminal_path or self._find_nios2_terminal()
         self.process: Optional[subprocess.Popen] = None
+        self.native_bridge = None
         self.cable_name: Optional[str] = None
         self.connected = False
 
@@ -182,6 +191,20 @@ class NiosTerminalBridge:
         # Auto-download do firmware Nios II na SDRAM
         self._ensure_firmware_loaded(self.cable_name)
 
+        # 1. Prioriza Conexão Direta e Nativa via jtag_atlantic.dll (sem processos externos ou pipes)
+        if JtagAtlanticNative:
+            try:
+                print(f"[BRIDGE] Conectando via Driver JTAG Nativo (jtag_atlantic.dll)...")
+                bridge = JtagAtlanticNative(self.cable_name)
+                if bridge.connect():
+                    self.native_bridge = bridge
+                    self.connected = True
+                    print("[BRIDGE] [OK] Driver JTAG Nativo ativo! Controles e telemetria sincronizados.")
+                    return True
+            except Exception as e:
+                print(f"[BRIDGE] Falha no driver nativo ({e}). Tentando nios2-terminal...")
+
+        # 2. Fallback para nios2-terminal
         cmd = [self.terminal_path, "-c", self.cable_name, "--quiet"]
         try:
             print(f"\n[HARDWARE] Placa Terasic DE10-Lite detectada via cabo '{self.cable_name}'.")
@@ -203,11 +226,24 @@ class NiosTerminalBridge:
             return False
 
     def send_dual_mask(self, p1: int, p2: int) -> bool:
-        if not self.connected or not self.process or not self.process.stdin:
+        if not self.connected:
+            return False
+
+        frame = f"!{p1 & 0xFF:02X}{p2 & 0xFF:02X}\n".encode("ascii")
+
+        # Rota 1: Driver Nativo
+        if self.native_bridge:
+            try:
+                self.native_bridge.write(frame)
+                return True
+            except Exception:
+                self.connected = False
+                return False
+
+        # Rota 2: Subprocesso
+        if not self.process or not self.process.stdin:
             return False
         try:
-            # Protocolo ASCII HEX imune a filtros de caracteres de controle
-            frame = f"!{p1 & 0xFF:02X}{p2 & 0xFF:02X}\n".encode("ascii")
             self.process.stdin.write(frame)
             self.process.stdin.flush()
             return True
@@ -222,6 +258,12 @@ class NiosTerminalBridge:
             return False
 
     def close(self):
+        if self.native_bridge:
+            try:
+                self.native_bridge.close()
+            except Exception:
+                pass
+            self.native_bridge = None
         if self.process:
             try:
                 self.process.terminate()

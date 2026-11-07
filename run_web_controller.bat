@@ -20,6 +20,12 @@ if %errorlevel% equ 0 (
     ) else if exist "C:\Program Files (x86)\nodejs\node.exe" (
         set "NODE_CMD=C:\Program Files (x86)\nodejs\node.exe"
         set "PATH=%PATH%;C:\Program Files (x86)\nodejs"
+    ) else if exist "%LOCALAPPDATA%\Programs\node\node.exe" (
+        set "NODE_CMD=%LOCALAPPDATA%\Programs\node\node.exe"
+        set "PATH=%PATH%;%LOCALAPPDATA%\Programs\node"
+    ) else if exist "%APPDATA%\npm\node.exe" (
+        set "NODE_CMD=%APPDATA%\npm\node.exe"
+        set "PATH=%PATH%;%APPDATA%\npm"
     )
 )
 

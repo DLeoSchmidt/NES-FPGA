@@ -182,6 +182,9 @@ static void poll_jtag_uart(void) {
 				break;
 
 			default:
+				if (rx_byte == '\r' || rx_byte == '\n') {
+					break;
+				}
 				// Fallback interativo: caracteres ASCII simples via nios2-terminal manual
 				if (rx_byte == 'w' || rx_byte == 'W') g_pc_p1_mask ^= NES_BTN_UP;
 				else if (rx_byte == 's' || rx_byte == 'S') g_pc_p1_mask ^= NES_BTN_DOWN;
@@ -191,7 +194,7 @@ static void poll_jtag_uart(void) {
 				else if (rx_byte == 'l' || rx_byte == 'L') g_pc_p1_mask ^= NES_BTN_A;
 				else if (rx_byte == 'g' || rx_byte == 'G') g_pc_p1_mask ^= NES_BTN_SELECT;
 				else if (rx_byte == 'h' || rx_byte == 'H') g_pc_p1_mask ^= NES_BTN_START;
-				else if (rx_byte == ' ' || rx_byte == '0') { g_pc_p1_mask = 0; g_pc_p2_mask = 0; }
+				else if (rx_byte == ' ' || rx_byte == 'c' || rx_byte == 'C') { g_pc_p1_mask = 0; g_pc_p2_mask = 0; }
 				g_jtag_state = 0;
 				jtag_uart_puts_noblock("KEY\n");
 				break;
@@ -227,8 +230,10 @@ int main() {
 	BYTE errorflag = 0;
 	BYTE device = 0;
 
-	// 1. Desabilita interrupcoes do JTAG UART para garantir leitura direta sem interferencia do HAL
-	IOWR_ALTERA_AVALON_JTAG_UART_CONTROL(JTAG_UART_0_BASE, 0x00);
+	// 1. Desabilita interrupcao e desregistra handler da JTAG UART para garantir leitura direta sem interferencia do HAL
+	alt_irq_register(JTAG_UART_0_IRQ, NULL, NULL);
+	// Mantem RE = 1 para que o host JTAG Atlantic saiba que o buffer esta pronto para receber dados
+	IOWR_ALTERA_AVALON_JTAG_UART_CONTROL(JTAG_UART_0_BASE, ALTERA_AVALON_JTAG_UART_CONTROL_RE_MSK);
 
 	// 2. Limpa quaisquer bytes residuais no FIFO da JTAG UART
 	while (IORD_ALTERA_AVALON_JTAG_UART_DATA(JTAG_UART_0_BASE) & ALTERA_AVALON_JTAG_UART_DATA_RVALID_MSK);

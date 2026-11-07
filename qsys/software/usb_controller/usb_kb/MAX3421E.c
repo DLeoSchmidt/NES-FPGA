@@ -39,63 +39,33 @@ void MAXreg_wr(BYTE reg, BYTE val) {
 	wdata[0] = reg+2;
 	wdata[1] = val;
 
-	int code = alt_avalon_spi_command(SPI_0_BASE, 0, 2, wdata, 0, NULL, 0);
-
-	if (code < 0) printf("error MAXreg_wr");
+	alt_avalon_spi_command(SPI_0_BASE, 0, 2, wdata, 0, NULL, 0);
 }
 //multiple-byte write
 //returns a pointer to a memory position after last written
 BYTE* MAXbytes_wr(BYTE reg, BYTE nbytes, BYTE* data) {
-	//psuedocode:
-	//select MAX3421E (may not be necessary if you are using SPI peripheral)
-	//write reg + 2 via SPI
-	//write data[n] via SPI, where n goes from 0 to nbytes-1
-	//read return code from SPI peripheral (see Intel documentation) 
-	//if return code < 0  print an error
-	//deselect MAX3421E (may not be necessary if you are using SPI peripheral)
-	//return (data + nbytes);
-
 	alt_u8 wdata[nbytes+1];
 	wdata[0] = reg+2;
 	int i;
 	for (i=0; i < nbytes; i++) {
 		wdata[i+1] = data[i];
 	}
-	int code = alt_avalon_spi_command(SPI_0_BASE, 0, nbytes + 1, wdata, 0, NULL, 0);
-	if (code < 0) printf("error MAXbytes_wr");
+	alt_avalon_spi_command(SPI_0_BASE, 0, nbytes + 1, wdata, 0, NULL, 0);
 	return (data + nbytes);
 }
 
 //reads register from MAX3421E via SPI
 BYTE MAXreg_rd(BYTE reg) {
-	//psuedocode:
-	//select MAX3421E (may not be necessary if you are using SPI peripheral)
-	//write reg via SPI
-	//read val via SPI
-	//read return code from SPI peripheral (see Intel documentation)
-	//if return code < 0 print an error
-	//deselect MAX3421E (may not be necessary if you are using SPI peripheral)
-	//return val
 	alt_u8 ret;
 	alt_u8 wdata = reg;
-	int code = alt_avalon_spi_command(SPI_0_BASE, 0, 1, &wdata, 1, &ret, 0);
-	if (code < 0) printf("error MAXreg_rd");
+	alt_avalon_spi_command(SPI_0_BASE, 0, 1, &wdata, 1, &ret, 0);
 	return ret;
 }
 //multiple-byte write
 //returns a pointer to a memory position after last written
 BYTE* MAXbytes_rd(BYTE reg, BYTE nbytes, BYTE* data) {
-	//psuedocode:
-	//select MAX3421E (may not be necessary if you are using SPI peripheral)
-	//write reg via SPI
-	//read data[n] from SPI, where n goes from 0 to nbytes-1
-	//read return code from SPI peripheral (see Intel documentation)
-	//if return code < 0 print an error
-	//deselect MAX3421E (may not be necessary if you are using SPI peripheral)
-	//return (data + nbytes);
 	alt_u8 wdata = reg;
-	int code = alt_avalon_spi_command(SPI_0_BASE, 0, 1, &wdata, nbytes, data, 0);
-	if (code < 0) printf("error MAXbytes_rd");
+	alt_avalon_spi_command(SPI_0_BASE, 0, 1, &wdata, nbytes, data, 0);
 	return (data + nbytes);
 }
 // Flag global indicando se a placa de expansao USB MAX3421E esta fisicamente presente
@@ -112,13 +82,11 @@ BYTE MAX3421E_detect(void) {
 	// Se ambos baterem com os dados escritos, o chip SPI esta conectado
 	if (v1 == 0x55 && v2 == 0xAA) {
 		g_has_max3421e = 1;
-		printf("[USB] MAX3421E detectado no barramento SPI!\n");
 		return 1;
 	}
 
 	// Sem resposta no barramento SPI (placa de expansao ausente)
 	g_has_max3421e = 0;
-	printf("[USB] MAX3421E nao detectado. Operando exclusivamente via JTAG/PC.\n");
 	return 0;
 }
 
@@ -136,7 +104,6 @@ void MAX3421E_reset(void) {
 	while (!(MAXreg_rd( rUSBIRQ) & bmOSCOKIRQ)) { //wait until the PLL stabilizes
 		tmp++;                                      //timeout apos 255 tentativas
 		if (tmp == 0) {
-			printf("reset timeout!\n");
 			g_has_max3421e = 0;
 			break; // Interrompe para nao travar a execucao do Nios II
 		}
@@ -165,10 +132,8 @@ void MAX_busprobe(void) {
 		if (usb_task_state != USB_ATTACHED_SUBSTATE_WAIT_RESET_COMPLETE) { //bus reset causes connection detect interrupt
 			if (!(MAXreg_rd( rMODE) & bmLOWSPEED)) {
 				MAXreg_wr( rMODE, MODE_FS_HOST);         //start full-speed host
-				printf("Starting in full speed\n");
 			} else {
 				MAXreg_wr( rMODE, MODE_LS_HOST);    //start low-speed host
-				printf("Starting in low speed\n");
 			}
 			usb_task_state = ( USB_STATE_ATTACHED); //signal usb state machine to start attachment sequence
 		}
@@ -177,10 +142,8 @@ void MAX_busprobe(void) {
 		if (usb_task_state != USB_ATTACHED_SUBSTATE_WAIT_RESET_COMPLETE) { //bus reset causes connection detect interrupt
 			if (!(MAXreg_rd( rMODE) & bmLOWSPEED)) {
 				MAXreg_wr( rMODE, MODE_LS_HOST);   //start low-speed host
-				printf("Starting in low speed\n");
 			} else {
 				MAXreg_wr( rMODE, MODE_FS_HOST);         //start full-speed host
-				printf("Starting in full speed\n");
 			}
 			usb_task_state = ( USB_STATE_ATTACHED); //signal usb state machine to start attachment sequence
 		}
@@ -227,11 +190,9 @@ void MAX3421E_Task(void) {
 	if (!g_has_max3421e) return;
 
 	if ( IORD_ALTERA_AVALON_PIO_DATA(USB_IRQ_BASE) == 0) {
-		printf("MAX interrupt\n\r");
 		MaxIntHandler();
 	}
 	if ( IORD_ALTERA_AVALON_PIO_DATA(USB_GPX_BASE) == 1) {
-		printf("GPX interrupt\n\r");
 		MaxGpxHandler();
 	}
 }
@@ -240,7 +201,6 @@ void MaxIntHandler(void) {
 	BYTE HIRQ;
 	BYTE HIRQ_sendback = 0x00;
 	HIRQ = MAXreg_rd( rHIRQ);                  //determine interrupt source
-	printf("IRQ: %x\n", HIRQ);
 	if (HIRQ & bmFRAMEIRQ) {                   //->1ms SOF interrupt handler
 		HIRQ_sendback |= bmFRAMEIRQ;
 	}                   //end FRAMEIRQ handling

@@ -1,15 +1,15 @@
 {
-  "slug": "smb",
-  "title": "Super Mario Bros.",
-  "romFile": "Super Mario Bros. (JU) (PRG0) [!].nes",
-  "prgBanks": 2,
-  "prgSizeKB": 32,
+  "slug": "bomberman",
+  "title": "Bomberman",
+  "romFile": "Bomberman (U).nes",
+  "prgBanks": 1,
+  "prgSizeKB": 16,
   "chrBanks": 1,
   "chrSizeKB": 8,
   "mapper": 0,
-  "mapperType": "NROM-256",
+  "mapperType": "NROM-128",
   "mirroring": "Vertical",
   "hardwareCompatibility": "Nativo (100% OK)",
-  "createdAt": "2026-11-05T02:54:16.256Z",
-  "activatedAt": "2026-11-07T15:32:54.581Z"
+  "createdAt": "2026-11-05T02:54:15.858Z",
+  "activatedAt": "2026-11-07T15:58:28.856Z"
 }

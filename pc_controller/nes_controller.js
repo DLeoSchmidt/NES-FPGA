@@ -233,6 +233,30 @@ function initSerialBridge(portName, baudRate = 115200) {
     }
 }
 
+function findPythonExecutable() {
+    const candidates = [
+        'python',
+        'C:\\Python313\\python.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python313', 'python.exe'),
+        'C:\\Python312\\python.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'python.exe'),
+        'C:\\Python311\\python.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'python.exe')
+    ];
+    for (const p of candidates) {
+        if (!p) continue;
+        if (p === 'python') {
+            try {
+                const res = spawnSync('python', ['--version'], { stdio: 'ignore' });
+                if (res.status === 0) return 'python';
+            } catch {}
+        } else if (fs.existsSync(p)) {
+            return p;
+        }
+    }
+    return 'python';
+}
+
 /**
  * Encerra com segurança a conexão JTAG UART com o FPGA para liberar a porta JTAG.
  */
@@ -322,16 +346,27 @@ function startNiosBridge() {
         }
     }
 
-    const cmd = findNiosTerminal();
-    console.log(`[HARDWARE] Placa Terasic DE10-Lite detectada via cabo '${currentCableName}'.`);
-    console.log(`[BRIDGE] Conectando ao Nios II via JTAG UART (-c "${currentCableName}")...`);
+    const bridgeScript = path.join(__dirname, 'jtag_bridge.py');
+    const useNativeBridge = fs.existsSync(bridgeScript);
 
     try {
-        const args = ['-c', currentCableName, '--quiet'];
-        niosProcess = spawn(cmd, args, {
-            stdio: ['pipe', 'pipe', 'pipe'],
-            windowsHide: true
-        });
+        if (useNativeBridge) {
+            const pyCmd = findPythonExecutable();
+            console.log(`[BRIDGE] Conectando ao Nios II via Driver JTAG Nativo (${pyCmd} -> jtag_atlantic.dll)...`);
+            niosProcess = spawn(pyCmd, ['-u', bridgeScript, currentCableName], {
+                stdio: ['pipe', 'pipe', 'pipe'],
+                windowsHide: true
+            });
+        } else {
+            const cmd = findNiosTerminal();
+            console.log(`[HARDWARE] Placa Terasic DE10-Lite detectada via cabo '${currentCableName}'.`);
+            console.log(`[BRIDGE] Conectando ao Nios II via JTAG UART (-c "${currentCableName}")...`);
+            const args = ['-c', currentCableName, '--quiet'];
+            niosProcess = spawn(cmd, args, {
+                stdio: ['pipe', 'pipe', 'pipe'],
+                windowsHide: true
+            });
+        }
 
         niosBridgeActive = true;
 
