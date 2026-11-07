@@ -156,10 +156,17 @@ function switchGame(slug, { build = false, flash = false } = {}) {
 
     const destPrg = path.join(targetDir, 'prg.mif');
     const destChr = path.join(targetDir, 'chr.mif');
+    const rootPrg = path.join(targetDir, '..', 'prg.mif');
+    const rootChr = path.join(targetDir, '..', 'chr.mif');
 
     try {
+        // Copia para cart_init/ e sincroniza tambem na raiz de NES-FPGA/
         fs.copyFileSync(srcPrg, destPrg);
         fs.copyFileSync(srcChr, destChr);
+        try {
+            fs.copyFileSync(srcPrg, rootPrg);
+            fs.copyFileSync(srcChr, rootChr);
+        } catch {}
 
         const activeData = {
             ...target,
@@ -181,12 +188,16 @@ function switchGame(slug, { build = false, flash = false } = {}) {
         // Se solicitado build ou flash via terminal, executa o pipeline automático
         if (build || flash) {
             if (quartus) {
-                quartus.runPipeline({
-                    switchMif: false,
-                    doUpdateMif: true,
-                    doAsm: true,
-                    doFlash: flash
-                });
+                try {
+                    quartus.runPipeline({
+                        switchMif: false,
+                        doUpdateMif: true,
+                        doAsm: true,
+                        doFlash: flash
+                    });
+                } catch (pipeErr) {
+                    console.error(`[AVISO PIPELINE] ${pipeErr.message}`);
+                }
             } else {
                 console.warn('[AVISO] Módulo quartus_cli não disponível para automação.');
             }
@@ -208,23 +219,43 @@ function switchGame(slug, { build = false, flash = false } = {}) {
     }
 }
 
-// Tratamento de argumentos CLI
+// Tratamento robusto de argumentos CLI
 if (require.main === module) {
-    const args = process.argv.slice(2);
-    const command = (args[0] || '').toLowerCase().trim();
+    const rawArgs = process.argv.slice(2);
 
-    if (!command) {
+    const flags = new Set();
+    const positional = [];
+
+    for (const a of rawArgs) {
+        if (a.startsWith('-')) {
+            flags.add(a.toLowerCase());
+        } else {
+            positional.push(a);
+        }
+    }
+
+    const hasBuildFlag = flags.has('--build') || flags.has('-b');
+    const hasFlashFlag = flags.has('--flash') || flags.has('-f') || flags.has('-a') || flags.has('--all');
+
+    const firstWord = (positional[0] || '').toLowerCase().trim();
+    const secondWord = (positional[1] || '').toLowerCase().trim();
+
+    // 1. Sem argumentos: lista catálogo de jogos
+    if (positional.length === 0 && !hasBuildFlag && !hasFlashFlag) {
         const active = getActiveGame();
         printCatalog(loadCatalog(), active ? active.slug : '');
-    } else if (command === 'current') {
+    } else if (firstWord === 'current' || firstWord === 'active') {
         const active = getActiveGame();
         if (active) {
             console.log(`Jogo ativo: ${active.title} [slug: ${active.slug}] (${active.mirroring})`);
         } else {
             console.log('Nenhum jogo registrado em active_game.json.');
         }
-    } else if (command === 'search') {
-        const query = (args[1] || '').toLowerCase().trim();
+    } else if (firstWord === 'list' || firstWord === 'ls') {
+        const active = getActiveGame();
+        printCatalog(loadCatalog(), active ? active.slug : '');
+    } else if (firstWord === 'search' || firstWord === 'find') {
+        const query = (positional[1] || '').toLowerCase().trim();
         if (!query) {
             console.error('Uso: node cart_init/switch_game.js search <termo>');
             process.exit(1);
@@ -236,9 +267,8 @@ if (require.main === module) {
         );
         const active = getActiveGame();
         printCatalog(filtered, active ? active.slug : '');
-    } else if (command === 'quartus') {
+    } else if (firstWord === 'quartus' || firstWord === 'doctor') {
         if (quartus) {
-            // Executa diagnóstico completo
             const { all, compiler, programmer } = quartus.getBestToolchain();
             console.log('='.repeat(70));
             console.log('            DIAGNÓSTICO DO INTEL QUARTUS NO SISTEMA                ');
@@ -260,25 +290,55 @@ if (require.main === module) {
         } else {
             console.error('[ERRO] Módulo quartus_cli não encontrado.');
         }
-    } else if (command === 'flash') {
+    } else if (firstWord === 'flash' && positional.length === 1 && !hasBuildFlag) {
+        // Comando flash explícito avulso (gravação na placa)
         if (quartus) {
-            const { programmer } = quartus.getBestToolchain();
-            quartus.programFpga(programmer);
+            try {
+                const { programmer } = quartus.getBestToolchain();
+                quartus.programFpga(programmer);
+            } catch (err) {
+                console.error(`[AVISO JTAG] ${err.message}`);
+            }
         } else {
             console.error('[ERRO] Módulo quartus_cli não encontrado.');
         }
-    } else if (command === 'build') {
+    } else if (firstWord === 'build' && positional.length === 1 && !hasFlashFlag) {
+        // Comando build explícito avulso (Update MIF + Assembler no jogo ativo)
         if (quartus) {
-            const { compiler } = quartus.getBestToolchain();
-            quartus.updateMif(compiler);
-            quartus.runAssembler(compiler);
+            try {
+                const { compiler } = quartus.getBestToolchain();
+                quartus.updateMif(compiler);
+                quartus.runAssembler(compiler);
+            } catch (err) {
+                console.error(`[ERRO BUILD] ${err.message}`);
+                process.exit(1);
+            }
         } else {
             console.error('[ERRO] Módulo quartus_cli não encontrado.');
         }
     } else {
-        const doBuild = args.includes('--build');
-        const doFlash = args.includes('--flash') || args.includes('-a') || args.includes('--all');
-        switchGame(command, { build: doBuild, flash: doFlash });
+        // Operações sobre jogos (com slug ou com jogo ativo padrão)
+        let targetSlug = null;
+        let doBuild = hasBuildFlag;
+        let doFlash = hasFlashFlag;
+
+        if (positional.length === 0) {
+            // Invocação com apenas flags (ex: node switch_game.js --build ou --flash)
+            const active = getActiveGame();
+            if (active && active.slug) {
+                targetSlug = active.slug;
+                console.log(`[INFO] Operando sobre o jogo ativo atual: '${active.title}' [slug: ${targetSlug}].`);
+            } else {
+                targetSlug = 'smb';
+                console.log(`[INFO] Nenhum jogo ativo registrado. Operando sobre o jogo padrão: 'smb'.`);
+            }
+        } else {
+            targetSlug = positional[0];
+            if (secondWord === 'build') doBuild = true;
+            if (secondWord === 'flash') doFlash = true;
+        }
+
+        switchGame(targetSlug, { build: doBuild, flash: doFlash });
     }
 }
 

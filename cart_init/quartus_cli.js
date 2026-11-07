@@ -235,14 +235,22 @@ function runAssembler(compiler, onLog = console.log) {
 /**
  * Passo 3: Grava o arquivo `.sof` na placa DE10-Lite via `quartus_pgm`.
  */
-function programFpga(programmer, cableName = null, onLog = console.log) {
+function programFpga(programmer, cableName = null, onLog = console.log, { requireCable = true } = {}) {
     if (!programmer || !programmer.pgm) {
         throw new Error('quartus_pgm não encontrado no sistema.');
     }
 
     const cables = listJtagCables(programmer.pgm);
     if (cables.length === 0) {
-        throw new Error('Nenhum cabo JTAG / USB-Blaster detectado. Verifique se a placa DE10-Lite está conectada via cabo USB e ligada.');
+        if (requireCable) {
+            throw new Error('Nenhum cabo JTAG / USB-Blaster detectado. Conecte o cabo USB da placa DE10-Lite e certifique-se de que a placa está ligada.');
+        } else {
+            onLog('\n[AVISO JTAG] Nenhum cabo USB-Blaster detectado no momento.');
+            onLog('  -> O bitstream atualizado foi gerado com sucesso em: output_files/NES.sof');
+            onLog('  -> Para gravar na placa quando conectar o cabo, execute:');
+            onLog('     node cart_init/switch_game.js flash');
+            return false;
+        }
     }
 
     const targetCable = cableName || cables[0];
@@ -311,14 +319,14 @@ function runPipeline({ switchMif = true, doUpdateMif = true, doAsm = true, doFla
         runAssembler(toolchain.compiler, onLog);
     }
 
-    // 4. Grava na placa via Programmer
+    // 4. Grava na placa via Programmer (tolerante à ausência de cabo JTAG)
     if (doFlash) {
         if (!toolchain.programmer) {
             onLog('\n[AVISO] Nenhum programador (quartus_pgm) encontrado.');
             return false;
         }
         onLog('\n[PASSO 4/4] Gravando bitstream .sof na FPGA DE10-Lite...');
-        programFpga(toolchain.programmer, null, onLog);
+        programFpga(toolchain.programmer, null, onLog, { requireCable: false });
     }
 
     onLog('='.repeat(70));
