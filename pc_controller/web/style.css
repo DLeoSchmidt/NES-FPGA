@@ -150,6 +150,11 @@ h1 {
     box-shadow: 0 0 8px #ff5252;
 }
 
+.dot.simulation {
+    background-color: #f59e0b;
+    box-shadow: 0 0 8px #f59e0b;
+}
+
 /* Grade com os 2 Controles */
 .controllers-grid {
     display: grid;

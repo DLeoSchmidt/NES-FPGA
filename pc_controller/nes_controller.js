@@ -3,17 +3,18 @@
  * NES-FPGA Dual Controller PC Bridge (Node.js Edition & WebSocket Server)
  * ======================================================================
  * Permite controlar 2 jogadores independentes (Player 1 e Player 2) no NES-FPGA.
- * Transmite o frame de 3 bytes [0x5A, mask_p1, mask_p2] via JTAG UART (nios2-terminal).
+ * Transmite o frame de 3 bytes [0x5A, mask_p1, mask_p2] via JTAG UART (nios2-terminal)
+ * ou via porta Serial RS-232 / DB9.
  * 
  * Servidor Web nativo na porta 8080 para a interface HTML5.
- * Zero dependências externas (100% bibliotecas padrão do Node.js).
+ * Zero dependências externas (100% bibliotecas nativas do Node.js).
  */
 
 const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const readline = require('readline');
 
 // Integração com o Switch Game e Automação do Quartus CLI
@@ -45,6 +46,12 @@ const HTTP_PORT  = parseInt(process.env.PORT, 10) || 8080;
 
 /** @type {import('child_process').ChildProcessWithoutNullStreams | null} */
 let niosProcess = null;
+let currentCableName = null;
+let isFpgaConnected = false;
+let niosBridgeActive = false;
+let isFlashing = false;
+let reconnectTimer = null;
+
 let currentP1Mask = 0;
 let currentP2Mask = 0;
 const wsClients = new Set();
@@ -68,7 +75,6 @@ function findNiosTerminal() {
 
     for (const p of priorityPaths) {
         if (fs.existsSync(p)) {
-            console.log(`[BRIDGE] Executavel prioritario Quartus 18.1 localizado: ${p}`);
             return p;
         }
     }
@@ -118,13 +124,11 @@ function findNiosTerminal() {
     }
 
     if (candidates.length > 0) {
-        // Ordena colocando qualquer instalação contendo "18.1" no início
         candidates.sort((a, b) => {
             const a18 = a.includes('18.1') ? 1 : 0;
             const b18 = b.includes('18.1') ? 1 : 0;
             return b18 - a18;
         });
-        console.log(`[BRIDGE] nios2-terminal selecionado via varredura: ${candidates[0]}`);
         return candidates[0];
     }
 
@@ -179,7 +183,6 @@ function initSerialBridge(portName, baudRate = 115200) {
     console.log(`[SERIAL] Inicializando conector Serial DB9 / RS-232 em ${portName} a ${baudRate} bps...`);
 
     try {
-        // Script inline em PowerShell para streaming contínuo de alta performance via SerialPort do .NET
         const psScript = `
             try {
                 $p = New-Object System.IO.Ports.SerialPort("${portName}", ${baudRate}, [System.IO.Ports.Parity]::None, 8, [System.IO.Ports.StopBits]::One)
@@ -210,6 +213,7 @@ function initSerialBridge(portName, baudRate = 115200) {
             const msg = d.toString();
             if (msg.includes('[SERIAL_OK]')) {
                 console.log(`[SERIAL] [OK] Conectado com sucesso à porta Serial DB9 (${portName})!`);
+                broadcastHardwareStatus();
             } else if (msg.includes('[SERIAL_ERR]')) {
                 console.warn(`[SERIAL] Erro na porta serial ${portName}: ${msg.trim()}`);
             }
@@ -218,6 +222,7 @@ function initSerialBridge(portName, baudRate = 115200) {
         serialBridgeProcess.on('exit', () => {
             console.log(`[SERIAL] Ponte serial em ${portName} finalizada.`);
             serialBridgeProcess = null;
+            broadcastHardwareStatus();
         });
 
         serialPortConfig = { port: portName, baud: baudRate };
@@ -227,37 +232,181 @@ function initSerialBridge(portName, baudRate = 115200) {
     }
 }
 
-function initNiosBridge() {
+/**
+ * Encerra com segurança a conexão JTAG UART com o FPGA para liberar a porta JTAG.
+ */
+function stopNiosBridge() {
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+
+    if (niosProcess) {
+        const pid = niosProcess.pid;
+        try {
+            niosProcess.stdin.end();
+            niosProcess.kill('SIGKILL');
+        } catch {}
+        niosProcess = null;
+
+        if (process.platform === 'win32' && pid) {
+            try {
+                execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore', timeout: 2000 });
+            } catch {}
+        }
+    }
+
+    // Garante que nenhum processo residual do nios2-terminal retenha a DLL jtag_atlantic
+    if (process.platform === 'win32') {
+        try {
+            execSync('taskkill /F /IM nios2-terminal.exe', { stdio: 'ignore', timeout: 2000 });
+        } catch {}
+    }
+
+    niosBridgeActive = false;
+    broadcastHardwareStatus();
+}
+
+/**
+ * Inicia a ponte de comunicação JTAG UART com o processador Nios II na placa DE10-Lite.
+ */
+function startNiosBridge() {
+    if (isFlashing) return;
+    if (niosProcess) return;
+
+    // 1. Detecta se a placa DE10-Lite está conectada via cabo JTAG USB-Blaster
+    let cables = [];
+    if (quartus) {
+        try {
+            cables = quartus.listJtagCables();
+        } catch (e) {
+            console.warn('[BRIDGE] Aviso ao listar cabos JTAG:', e.message);
+        }
+    }
+
+    if (cables.length === 0) {
+        if (isFpgaConnected) {
+            console.log('[HARDWARE] [AVISO] Placa DE10-Lite foi desconectada. Modo Simulação ativo.');
+        }
+        isFpgaConnected = false;
+        currentCableName = null;
+        niosBridgeActive = false;
+        broadcastHardwareStatus();
+        scheduleNiosReconnect(3000);
+        return;
+    }
+
+    isFpgaConnected = true;
+    currentCableName = cables[0];
+
+    // Garante liberação de instâncias anteriores na porta JTAG
+    if (process.platform === 'win32') {
+        try {
+            execSync('taskkill /F /IM nios2-terminal.exe', { stdio: 'ignore', timeout: 2000 });
+        } catch {}
+    }
+
     const cmd = findNiosTerminal();
-    console.log(`[BRIDGE] Conectando ao FPGA via JTAG UART: ${cmd}`);
+    console.log(`[HARDWARE] Placa Terasic DE10-Lite detectada via cabo '${currentCableName}'.`);
+    console.log(`[BRIDGE] Conectando ao Nios II via JTAG UART (-c "${currentCableName}")...`);
 
     try {
-        niosProcess = spawn(cmd, ['--quiet'], {
+        const args = ['-c', currentCableName, '--quiet'];
+        niosProcess = spawn(cmd, args, {
             stdio: ['pipe', 'pipe', 'pipe'],
             windowsHide: true
         });
 
+        niosBridgeActive = true;
+
+        niosProcess.stdout.on('data', (d) => {
+            const lines = d.toString().split(/\r?\n/).filter(Boolean);
+            for (const line of lines) {
+                console.log(`[NIOS] ${line}`);
+            }
+        });
+
+        niosProcess.stderr.on('data', (d) => {
+            const msg = d.toString().trim();
+            // Ignora avisos operacionais comuns do nios2-terminal
+            if (msg && !msg.includes('INFO:')) {
+                console.warn(`[NIOS STDERR] ${msg}`);
+            }
+        });
+
         niosProcess.on('error', (err) => {
-            console.warn(`[AVISO] nios2-terminal não pôde ser iniciado (${err.message}).`);
-            console.warn(`[AVISO] Servidor ativo em modo de simulação/Web.`);
+            console.warn(`[BRIDGE] nios2-terminal reportou erro (${err.message}).`);
             niosProcess = null;
+            niosBridgeActive = false;
+            broadcastHardwareStatus();
+            scheduleNiosReconnect(3000);
         });
 
         niosProcess.on('exit', (code) => {
-            console.log(`[BRIDGE] nios2-terminal finalizado com código ${code}`);
+            if (!isFlashing) {
+                console.log(`[BRIDGE] Conexão JTAG UART encerrada (código ${code}). Agendando reconexão...`);
+            }
             niosProcess = null;
+            niosBridgeActive = false;
+            broadcastHardwareStatus();
+            scheduleNiosReconnect(2500);
         });
 
-        console.log(`[BRIDGE] Canal JTAG UART preparado.`);
-    } catch (e) {
-        console.warn(`[AVISO] Falha ao instanciar nios2-terminal: ${e.message}`);
-        niosProcess = null;
-    }
+        console.log(`[BRIDGE] [OK] Ponte JTAG UART ativa com sucesso! Controles e telemetria sincronizados.`);
+        broadcastHardwareStatus();
 
-    if (serialPortConfig && serialPortConfig.port) {
-        initSerialBridge(serialPortConfig.port, serialPortConfig.baud);
+        // Envia estado inicial dos controles para o Nios II
+        sendDualMaskToFPGA(currentP1Mask, currentP2Mask);
+    } catch (e) {
+        console.warn(`[BRIDGE] Falha ao iniciar nios2-terminal: ${e.message}`);
+        niosProcess = null;
+        niosBridgeActive = false;
+        broadcastHardwareStatus();
+        scheduleNiosReconnect(3000);
     }
 }
+
+/**
+ * Agenda tentativa de reconexão automática com a placa DE10-Lite.
+ */
+function scheduleNiosReconnect(delayMs = 3000) {
+    if (isFlashing) return;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (!niosProcess && !isFlashing) {
+            startNiosBridge();
+        }
+    }, delayMs);
+}
+
+// Watchdog contínuo de status de hardware (a cada 4 segundos)
+setInterval(() => {
+    if (isFlashing) return;
+    if (!quartus) return;
+
+    try {
+        const cables = quartus.listJtagCables();
+        const hasCable = cables.length > 0;
+
+        if (hasCable !== isFpgaConnected || (hasCable && cables[0] !== currentCableName)) {
+            if (hasCable) {
+                console.log(`[HARDWARE] Placa DE10-Lite conectada: '${cables[0]}'`);
+                currentCableName = cables[0];
+                isFpgaConnected = true;
+                if (!niosProcess) startNiosBridge();
+            } else {
+                console.log('[HARDWARE] Placa DE10-Lite desconectada.');
+                currentCableName = null;
+                isFpgaConnected = false;
+                stopNiosBridge();
+            }
+            broadcastHardwareStatus();
+        }
+    } catch {
+        // Silencioso em caso de erro transitório no quartus_pgm
+    }
+}, 4000);
 
 /**
  * Transmite o frame de 3 bytes [0x5A, mask_p1, mask_p2] para o FPGA via:
@@ -291,6 +440,24 @@ function sendDualMaskToFPGA(p1, p2) {
     }
 }
 
+/**
+ * Envia o status atual do hardware para todos os clientes Web via WebSocket.
+ */
+function broadcastHardwareStatus() {
+    const payload = JSON.stringify({
+        type: 'hardware_status',
+        fpgaConnected: isFpgaConnected,
+        cableName: currentCableName,
+        niosActive: Boolean(niosProcess && niosBridgeActive),
+        serialConnected: Boolean(serialBridgeProcess),
+        serialPort: serialPortConfig ? serialPortConfig.port : null
+    });
+
+    for (const ws of wsClients) {
+        sendWsText(ws, payload);
+    }
+}
+
 // Servidor HTTP Estático
 const webDir = path.join(__dirname, 'web');
 const MIME_TYPES = {
@@ -308,7 +475,7 @@ function broadcastWsText(text) {
     }
 }
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
     // API REST - Lista de Jogos Compatíveis
     if (req.url === '/api/games') {
         if (!switcher) {
@@ -320,6 +487,52 @@ const server = http.createServer((req, res) => {
         const active = switcher.getActiveGame();
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ catalog, active }));
+        return;
+    }
+
+    // API REST - Recarregar Firmware Nios II na SDRAM sob demanda
+    if (req.url === '/api/firmware/reload') {
+        if (!quartus) {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'Módulo quartus_cli indisponível' }));
+            return;
+        }
+
+        try {
+            console.log('[API] Solicitação de recarga do firmware Nios II recebida.');
+            isFlashing = true;
+            stopNiosBridge();
+
+            // Breve intervalo para liberação completa da porta JTAG
+            await new Promise(r => setTimeout(r, 400));
+
+            const cables = quartus.listJtagCables();
+            if (cables.length === 0) {
+                isFlashing = false;
+                res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+                res.end(JSON.stringify({ success: false, error: 'Nenhum cabo USB-Blaster detectado.' }));
+                return;
+            }
+
+            const ok = quartus.downloadNiosFirmware(cables[0]);
+            isFlashing = false;
+
+            setTimeout(() => {
+                startNiosBridge();
+            }, 800);
+
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({
+                success: ok,
+                cableName: cables[0],
+                message: ok ? 'Firmware Nios II reiniciado na SDRAM com sucesso!' : 'Falha ao baixar firmware via nios2-download.'
+            }));
+        } catch (err) {
+            isFlashing = false;
+            scheduleNiosReconnect(1000);
+            res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+        }
         return;
     }
 
@@ -349,6 +562,7 @@ const server = http.createServer((req, res) => {
                 serialBridgeProcess = null;
             }
             serialPortConfig = null;
+            broadcastHardwareStatus();
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -381,7 +595,8 @@ const server = http.createServer((req, res) => {
                 path: toolchain.programmer.pgm
             } : null,
             cables,
-            isFullyAutomated: toolchain.isFullyAutomated
+            isFullyAutomated: toolchain.isFullyAutomated,
+            niosBridgeActive: Boolean(niosProcess && niosBridgeActive)
         }));
         return;
     }
@@ -412,9 +627,18 @@ const server = http.createServer((req, res) => {
             res.end(JSON.stringify({ success: false, error: 'Parâmetro slug ausente.' }));
             return;
         }
+
         try {
             const doBuild = action === 'build' || action === 'flash';
             const doFlash = action === 'flash';
+
+            // Durante o Flash, a porta JTAG deve ser temporariamente liberada para o quartus_pgm e nios2-download
+            if (doFlash) {
+                isFlashing = true;
+                stopNiosBridge();
+                // Aguarda 400ms para liberação das handles no Windows
+                await new Promise(r => setTimeout(r, 400));
+            }
 
             const switchRes = switcher.switchGame(slug, { build: doBuild, flash: doFlash });
             const active = switcher.getActiveGame();
@@ -437,6 +661,7 @@ const server = http.createServer((req, res) => {
             const pipelineInfo = (switchRes && switchRes.pipeline) || {};
             const sofGenerated = doBuild ? (pipelineInfo.sofGenerated !== undefined ? pipelineInfo.sofGenerated : true) : false;
             const flashed = !!pipelineInfo.flashed;
+            const elfDownloaded = !!pipelineInfo.elfDownloaded;
 
             let message = '';
             if (action === 'mif') {
@@ -445,12 +670,24 @@ const server = http.createServer((req, res) => {
                 message = `Bitstream NES.sof gerado com sucesso pelo Quartus Assembler! Pronto para gravação na placa DE10-Lite.`;
             } else if (action === 'flash') {
                 if (flashed && cableConnected) {
-                    message = `Bitstream gravado com sucesso no FPGA via cabo '${cableName}'! O jogo '${active.title}' já está rodando.`;
+                    if (elfDownloaded) {
+                        message = `Bitstream e firmware Nios II gravados com sucesso na placa DE10-Lite via '${cableName}'! O jogo '${active.title}' e os controles estão ativos.`;
+                    } else {
+                        message = `Bitstream gravado na placa DE10-Lite via '${cableName}'. O jogo '${active.title}' já está rodando.`;
+                    }
                 } else if (!cableConnected) {
                     message = `Bitstream NES.sof gerado com sucesso, mas a placa DE10-Lite NÃO foi detectada via USB-Blaster. Conecte o cabo USB da placa e clique em 'Gravar na Placa'.`;
                 } else {
                     message = `Bitstream compilado, porém houve aviso na gravação JTAG. Verifique a chave de energia e conexão do cabo USB.`;
                 }
+            }
+
+            // Retoma a ponte JTAG UART após término do flash
+            if (doFlash) {
+                isFlashing = false;
+                setTimeout(() => {
+                    startNiosBridge();
+                }, 800);
             }
 
             res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -461,6 +698,7 @@ const server = http.createServer((req, res) => {
                 mifUpdated: true,
                 sofGenerated,
                 flashed,
+                elfDownloaded,
                 cableConnected,
                 cableName,
                 message,
@@ -468,6 +706,10 @@ const server = http.createServer((req, res) => {
             }));
         } catch (err) {
             console.error(`[ERRO API] /api/switch-game: ${err.message}`);
+            if (action === 'flash') {
+                isFlashing = false;
+                scheduleNiosReconnect(1000);
+            }
             res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ success: false, error: err.message }));
         }
@@ -515,7 +757,16 @@ server.on('upgrade', (req, socket) => {
     wsClients.add(socket);
     console.log(`[WS] Cliente Web conectado. Total: ${wsClients.size}`);
 
+    // Envia estado atual dos controles e do hardware para o novo cliente
     sendWsText(socket, JSON.stringify({ type: 'state2', p1: currentP1Mask, p2: currentP2Mask }));
+    sendWsText(socket, JSON.stringify({
+        type: 'hardware_status',
+        fpgaConnected: isFpgaConnected,
+        cableName: currentCableName,
+        niosActive: Boolean(niosProcess && niosBridgeActive),
+        serialConnected: Boolean(serialBridgeProcess),
+        serialPort: serialPortConfig ? serialPortConfig.port : null
+    }));
 
     if (switcher) {
         const activeGame = switcher.getActiveGame();
@@ -632,9 +883,19 @@ function setupTerminalKeyboard() {
     console.log('\n' + '='.repeat(70));
     console.log('       NES-FPGA DUAL CONTROLLER - NODE.JS & WEB BRIDGE SERVER       ');
     console.log('='.repeat(70));
+    if (isFpgaConnected) {
+        console.log(` [STATUS HARDWARE] Placa DE10-Lite CONECTADA (${currentCableName})`);
+        console.log(` [MODO OPERACIONAL] FPGA REAL - Controles e Displays de 7 segmentos ativos`);
+    } else {
+        console.log(' [STATUS HARDWARE] Nenhuma placa DE10-Lite detectada via USB-Blaster');
+        console.log(' [MODO OPERACIONAL] SIMULAÇÃO / WEB - Controles virtuais e teclado ativos');
+    }
     console.log(` [WEB] Servidor Web ativo: http://localhost:${HTTP_PORT}`);
     console.log(' [P1 - Teclado Console] WASD (Dir) | K (A) | J (B) | Enter (Start) | U (Sel)');
     console.log(' [P2 - Teclado Console] Setas (Dir) | X (A) | Z (B) | Numpad5 | Numpad4');
+    if (serialBridgeProcess) {
+        console.log(` [SERIAL] Porta DB9 / RS-232 Ativa: ${serialPortConfig.port}`);
+    }
     console.log(' [SAIR] Ctrl+C ou ESC');
     console.log('='.repeat(70) + '\n');
 
@@ -652,8 +913,7 @@ function setupTerminalKeyboard() {
         }
 
         // Janela de 450ms: cobre o intervalo do repeat-delay do Windows (250-400ms).
-        // Enquanto o usuário segura a tecla, os caracteres repetidos renovam este timer,
-        // mantendo o botão ligado sem engasgos ou solturas indesejadas.
+        // Enquanto o usuário segura a tecla, os caracteres repetidos renovam este timer.
         const timer = setTimeout(() => {
             if (player === 'p1') currentP1Mask &= ~bitMask;
             else currentP2Mask &= ~bitMask;
@@ -672,11 +932,14 @@ function setupTerminalKeyboard() {
             for (const timer of activeTimers.values()) clearTimeout(timer);
             activeTimers.clear();
             sendDualMaskToFPGA(0, 0);
-            if (niosProcess) niosProcess.kill();
+            stopNiosBridge();
+            if (serialBridgeProcess) {
+                try { serialBridgeProcess.kill(); } catch {}
+            }
             process.exit(0);
         }
 
-        // Mapeamento P1 com chaveamento e decay independente por tecla
+        // Mapeamento P1
         if (key.name === 'w') triggerKey('p1_w', 'p1', BTN_UP);
         else if (key.name === 's') triggerKey('p1_s', 'p1', BTN_DOWN);
         else if (key.name === 'a') triggerKey('p1_a', 'p1', BTN_LEFT);
@@ -702,7 +965,13 @@ function renderConsoleStatus(p1, p2) {
     process.stdout.write(txt);
 }
 
-initNiosBridge();
+// Inicialização da Ponte e Servidor Web
+startNiosBridge();
+
+if (serialPortConfig && serialPortConfig.port) {
+    initSerialBridge(serialPortConfig.port, serialPortConfig.baud);
+}
+
 server.listen(HTTP_PORT, () => {
     setupTerminalKeyboard();
 });

@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 setlocal
 title NES-FPGA Python Hardware Controller
 
@@ -17,6 +18,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+echo [INFO] Iniciando ponte de controle Python com amostragem direta de hardware...
 python nes_controller.py
 
 if %errorlevel% neq 0 (

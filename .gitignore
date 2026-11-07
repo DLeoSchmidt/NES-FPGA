@@ -8,3 +8,5 @@ eclipse/*
 !eclipse\.metadata\.plugins\org.eclipse.core.runtime
 !eclipse\.metadata\.plugins\org.eclipse.debug.core
 !eclipse\.metadata\.plugins\org.eclipse.debug.ui
+__pycache__/
+*.pyc

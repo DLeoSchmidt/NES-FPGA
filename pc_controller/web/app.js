@@ -158,6 +158,8 @@ function connectWebSocket() {
                 if (ui.selectGame && data.active.slug) {
                     ui.selectGame.value = data.active.slug;
                 }
+            } else if (data.type === 'hardware_status') {
+                updateHardwareStatus(data);
             }
         } catch {
             // Ignora
@@ -173,6 +175,24 @@ function connectWebSocket() {
     ws.onerror = () => {
         ws.close();
     };
+}
+
+/**
+ * Atualiza o indicador de status do hardware (DE10-Lite FPGA vs Simulação)
+ */
+function updateHardwareStatus(data) {
+    if (!ui.status || !ui.indicator) return;
+
+    if (data.fpgaConnected) {
+        ui.indicator.className = 'dot connected';
+        const cable = data.cableName ? data.cableName.replace(/\[.*\]/, '').trim() : 'DE10-Lite';
+        ui.status.textContent = `DE10-Lite Conectada (${data.cableName || 'USB-0'})`;
+        ui.status.title = `Modo FPGA REAL ativo via ${data.cableName}. Nios II ${data.niosActive ? 'sincronizado' : 'iniciando'}.`;
+    } else {
+        ui.indicator.className = 'dot simulation';
+        ui.status.textContent = 'Modo Simulação (Placa desconectada)';
+        ui.status.title = 'Nenhuma placa DE10-Lite detectada via USB-Blaster. Controles virtuais e teclado do PC operando em modo de teste local.';
+    }
 }
 
 function broadcastDualMask(mask1, mask2) {
@@ -468,7 +488,8 @@ function renderSwitchModal(result) {
     // 3. Gravação FPGA (JTAG)
     if (action === 'flash') {
         if (result.flashed && result.cableConnected) {
-            setStepBadge(ui.stepStatusJtag, 'Gravado ✓', 'success');
+            const badgeTxt = result.elfDownloaded ? 'Gravado + Nios II ✓' : 'Gravado ✓';
+            setStepBadge(ui.stepStatusJtag, badgeTxt, 'success');
         } else if (!result.cableConnected) {
             setStepBadge(ui.stepStatusJtag, 'Sem Cabo ⚠️', 'warning');
         } else {
@@ -509,7 +530,8 @@ function renderSwitchModal(result) {
             if (ui.modalAlertTitle) ui.modalAlertTitle.textContent = 'Placa DE10-Lite atualizada com sucesso!';
             const cableInfo = result.cableName ? `via cabo '${result.cableName}'` : 'via USB-Blaster';
             if (ui.modalAlertDesc) {
-                ui.modalAlertDesc.textContent = `O bitstream foi compilado e gravado no FPGA ${cableInfo}. O jogo '${act.title}' já está pronto e em execução no hardware!`;
+                const niosTxt = result.elfDownloaded ? ' O firmware Nios II foi carregado na SDRAM e os controles estão ativos.' : '';
+                ui.modalAlertDesc.textContent = `O bitstream foi compilado e gravado no FPGA ${cableInfo}.${niosTxt} O jogo '${act.title}' já está pronto e em execução no hardware!`;
             }
         } else if (!result.cableConnected) {
             if (ui.modalTitleText) ui.modalTitleText.textContent = 'Bitstream Gerado (Cabo USB Ausente)';

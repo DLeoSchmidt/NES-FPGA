@@ -1,11 +1,12 @@
 @echo off
+chcp 65001 >nul
 setlocal
 title NES-FPGA Web & Node.js Controller
 
 cd /d "%~dp0pc_controller"
 
 echo ======================================================================
-echo          NES-FPGA DUAL CONTROLLER - SERVIDOR WEB ^& NODE.JS
+echo          NES-FPGA DUAL CONTROLLER - SERVIDOR WEB & NODE.JS
 echo ======================================================================
 
 where node >nul 2>nul
@@ -17,10 +18,10 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [INFO] Iniciando servidor Web na porta 8080...
-echo [INFO] Abrindo interface no navegador padrao...
+echo [INFO] Abrindo interface gráfica no navegador padrão (http://localhost:8080)...
 start http://localhost:8080
 
+echo [INFO] Iniciando ponte de controle com suporte a FPGA Real e Simulação...
 node nes_controller.js
 
 if %errorlevel% neq 0 (

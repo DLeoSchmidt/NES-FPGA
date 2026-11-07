@@ -233,6 +233,74 @@ function runAssembler(compiler, onLog = console.log) {
 }
 
 /**
+ * Localiza o script Nios II Command Shell no sistema operacional Windows.
+ */
+function findNiosCommandShell() {
+    const candidates = [
+        'C:\\intelFPGA_lite\\18.1\\nios2eds\\Nios II Command Shell.bat',
+        'C:\\intelFPGA\\18.1\\nios2eds\\Nios II Command Shell.bat',
+        'C:\\altera\\18.1\\nios2eds\\Nios II Command Shell.bat',
+        process.env.SOPC_KIT_NIOS2 ? path.join(process.env.SOPC_KIT_NIOS2, 'Nios II Command Shell.bat') : null,
+        'D:\\intelFPGA_lite\\18.1\\nios2eds\\Nios II Command Shell.bat',
+        'D:\\intelFPGA\\18.1\\nios2eds\\Nios II Command Shell.bat'
+    ].filter(Boolean);
+
+    for (const p of candidates) {
+        if (fs.existsSync(p)) return p;
+    }
+    return null;
+}
+
+/**
+ * Faz o download do firmware compilado (.elf) para o softcore Nios II na SDRAM.
+ * Obrigatório após gravar o bitstream .sof, pois a memória SDRAM da placa DE10-Lite é volátil.
+ * 
+ * @param {string} [cableName] Nome do cabo JTAG detectado (ex: "USB-Blaster [USB-0]").
+ * @param {Function} [onLog] Callback de log.
+ * @returns {boolean} True se o firmware foi baixado e o Nios II iniciado com sucesso.
+ */
+function downloadNiosFirmware(cableName = null, onLog = console.log) {
+    const elfPath = path.join(PROJECT_ROOT, 'qsys', 'software', 'usb_controller', 'usb_controller.elf');
+    if (!fs.existsSync(elfPath)) {
+        onLog(`[NIOS II] [AVISO] Firmware '${elfPath}' não encontrado.`);
+        return false;
+    }
+
+    const niosShell = findNiosCommandShell();
+    if (!niosShell) {
+        onLog('[NIOS II] [AVISO] Nios II Command Shell.bat não localizado para inicializar a SDRAM.');
+        return false;
+    }
+
+    const cables = listJtagCables();
+    const targetCable = cableName || (cables.length > 0 ? cables[0] : 'USB-Blaster [USB-0]');
+    const normalizedElf = elfPath.replace(/\\/g, '/');
+
+    onLog(`[NIOS II] Transferindo '${path.basename(elfPath)}' para a SDRAM via '${targetCable}'...`);
+    const psCommand = `& '${niosShell}' nios2-download -g -c '${targetCable}' '${normalizedElf}'`;
+
+    try {
+        const res = spawnSync('powershell', ['-NoProfile', '-Command', psCommand], {
+            cwd: PROJECT_ROOT,
+            encoding: 'utf-8',
+            timeout: 25000
+        });
+
+        if (res.status === 0) {
+            onLog('[NIOS II] [SUCESSO] Firmware Nios II iniciado na SDRAM! Controles e displays de 7 segmentos ativos.');
+            return true;
+        } else {
+            const err = (res.stderr || '') + (res.stdout || '');
+            onLog(`[NIOS II] [AVISO] Falha ao baixar .elf no Nios II (Código ${res.status}):\n${err}`);
+            return false;
+        }
+    } catch (e) {
+        onLog(`[NIOS II] [ERRO] Exceção ao executar nios2-download: ${e.message}`);
+        return false;
+    }
+}
+
+/**
  * Passo 3: Grava o arquivo `.sof` na placa DE10-Lite via `quartus_pgm`.
  */
 function programFpga(programmer, cableName = null, onLog = console.log, { requireCable = true } = {}) {
@@ -349,7 +417,11 @@ function runPipeline({ switchMif = true, doUpdateMif = true, doAsm = true, doFla
         onLog('\n[PASSO 4/4] Gravando bitstream .sof na FPGA DE10-Lite...');
         const flashSuccess = programFpga(toolchain.programmer, null, onLog, { requireCable: false });
         result.flashed = !!flashSuccess;
-        if (!flashSuccess && !result.cableConnected) {
+        if (flashSuccess) {
+            onLog('\n[PASSO EXTRA] Inicializando softcore Nios II na SDRAM com usb_controller.elf...');
+            const niosOk = downloadNiosFirmware(result.cableName, onLog);
+            result.elfDownloaded = !!niosOk;
+        } else if (!result.cableConnected) {
             result.warning = 'Bitstream NES.sof gerado com sucesso, mas nenhum cabo USB-Blaster foi detectado.';
         }
     }
@@ -411,5 +483,7 @@ module.exports = {
     updateMif,
     runAssembler,
     programFpga,
+    findNiosCommandShell,
+    downloadNiosFirmware,
     runPipeline
 };

@@ -4,7 +4,7 @@
 NES-FPGA Dual Controller PC Bridge (Python Edition)
 ===================================================
 Envia o estado dos dois controles (Player 1 e Player 2) para o emulador NES
-na FPGA atraves da interface JTAG UART (cabo USB-Blaster).
+na FPGA atraves da interface JTAG UART (cabo USB-Blaster) ou porta Serial DB9 / RS-232.
 
 Protocolo:
   - Byte 0 (Sync): 0x5A
@@ -16,7 +16,8 @@ import sys
 import os
 import time
 import subprocess
-from typing import Optional
+import re
+from typing import Optional, List
 
 # Mascaras de Bits para o Controle NES
 BTN_RIGHT  = 1 << 0
@@ -30,10 +31,52 @@ BTN_A      = 1 << 7
 
 SYNC_BYTE = 0x5A
 
+def list_jtag_cables(pgm_path: Optional[str] = None) -> List[str]:
+    """Lista todos os cabos/hardware JTAG conectados usando o quartus_pgm -l."""
+    candidates_pgm = [
+        pgm_path,
+        r"C:\intelFPGA_lite\18.1\quartus\bin64\quartus_pgm.exe",
+        r"C:\intelFPGA\18.1\quartus\bin64\quartus_pgm.exe",
+        r"C:\altera\18.1\quartus\bin64\quartus_pgm.exe",
+        r"D:\intelFPGA_lite\18.1\quartus\bin64\quartus_pgm.exe"
+    ]
+    target_pgm = None
+    for p in candidates_pgm:
+        if p and os.path.isfile(p):
+            target_pgm = p
+            break
+
+    if not target_pgm:
+        import shutil
+        target_pgm = shutil.which("quartus_pgm")
+
+    if not target_pgm:
+        return []
+
+    try:
+        res = subprocess.run(
+            [target_pgm, "-l"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=4
+        )
+        output = (res.stdout or "") + (res.stderr or "")
+        cables = []
+        for line in output.splitlines():
+            m = re.match(r"^\s*\d+\)\s+(.+?)\s*$", line)
+            if m:
+                cables.append(m.group(1).strip())
+        return cables
+    except Exception:
+        return []
+
+
 class NiosTerminalBridge:
     def __init__(self, terminal_path: Optional[str] = None):
         self.terminal_path = terminal_path or self._find_nios2_terminal()
         self.process: Optional[subprocess.Popen] = None
+        self.cable_name: Optional[str] = None
         self.connected = False
 
     def _find_nios2_terminal(self) -> str:
@@ -50,7 +93,6 @@ class NiosTerminalBridge:
         ]
         for p in priority_paths:
             if os.path.isfile(p):
-                print(f"[BRIDGE] Executavel prioritario Quartus 18.1 localizado: {p}")
                 return p
 
         # 2. Raizes expandidas para busca dinamica profunda
@@ -85,7 +127,6 @@ class NiosTerminalBridge:
         if candidates:
             # Prioriza estritamente os executaveis contendo '18.1'
             candidates.sort(key=lambda x: (1 if "18.1" in x else 0), reverse=True)
-            print(f"[BRIDGE] nios2-terminal selecionado via varredura: {candidates[0]}")
             return candidates[0]
 
         import shutil
@@ -96,9 +137,19 @@ class NiosTerminalBridge:
         return "nios2-terminal"
 
     def connect(self) -> bool:
-        cmd = [self.terminal_path, "--quiet"]
+        cables = list_jtag_cables()
+        if not cables:
+            if self.connected:
+                print("\n[HARDWARE] Placa DE10-Lite foi desconectada. Modo simulacao ativo.")
+            self.connected = False
+            self.cable_name = None
+            return False
+
+        self.cable_name = cables[0]
+        cmd = [self.terminal_path, "-c", self.cable_name, "--quiet"]
         try:
-            print(f"[BRIDGE] Conectando ao FPGA via JTAG UART: {self.terminal_path}")
+            print(f"\n[HARDWARE] Placa Terasic DE10-Lite detectada via cabo '{self.cable_name}'.")
+            print(f"[BRIDGE] Conectando ao FPGA via JTAG UART (-c \"{self.cable_name}\")...")
             self.process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
@@ -107,10 +158,12 @@ class NiosTerminalBridge:
                 bufsize=0
             )
             self.connected = True
-            print("[BRIDGE] Canal JTAG UART ativo.")
+            print("[BRIDGE] [OK] Ponte JTAG UART ativa com sucesso! Controles e telemetria sincronizados.")
             return True
         except Exception as ex:
             print(f"[AVISO] nios2-terminal nao iniciado ({ex}). Modo de teste de console ativo.")
+            self.connected = False
+            self.process = None
             return False
 
     def send_dual_mask(self, p1: int, p2: int) -> bool:
@@ -123,6 +176,12 @@ class NiosTerminalBridge:
             return True
         except Exception:
             self.connected = False
+            if self.process:
+                try:
+                    self.process.terminate()
+                except Exception:
+                    pass
+                self.process = None
             return False
 
     def close(self):
@@ -216,8 +275,14 @@ def run_interactive_controller():
     print("\n" + "=" * 70)
     print("      NES-FPGA DUAL CONTROLLER - PYTHON CONSOLE EDITION      ")
     print("=" * 70)
+    if bridge.connected:
+        print(f" [STATUS HARDWARE] Placa DE10-Lite CONECTADA ({bridge.cable_name})")
+        print(" [MODO OPERACIONAL] FPGA REAL - Controles e Displays de 7 segmentos ativos")
+    else:
+        print(" [STATUS HARDWARE] Nenhuma placa DE10-Lite detectada via USB-Blaster")
+        print(" [MODO OPERACIONAL] SIMULACAO / CONSOLE - Pressione teclas para testar localmente")
     print(" Player 1: WASD (Direcional) | K (A) | J (B) | Enter (Start) | U (Select)")
-    print(" Player 2: Setas (Direcional) | X (A) | Z (B)")
+    print(" Player 2: Setas (Direcional) | X (A) | Z (B) | Numpad5 | Numpad4")
     if serial_bridge and serial_bridge.connected:
         print(f" Conexao Serial DB9 Ativa: {serial_port} @ {serial_baud} bps")
     print(" Sair: ESC ou Q")
@@ -232,7 +297,6 @@ def run_interactive_controller():
         user32 = ctypes.windll.user32
 
         # Virtual Key Codes (Win32) para leitura de hardware contínua a 60Hz
-        # Player 1: WASD + K(A) + J(B) + Enter(Start) + U(Select)
         VK_W = 0x57
         VK_S = 0x53
         VK_A = 0x41
@@ -242,7 +306,6 @@ def run_interactive_controller():
         VK_RETURN = 0x0D
         VK_U = 0x55
 
-        # Player 2: Setas + X/Numpad2(A) + Z/Numpad1(B) + Numpad5(Start) + Numpad4(Select)
         VK_UP = 0x26
         VK_DOWN = 0x28
         VK_LEFT = 0x25
@@ -270,6 +333,7 @@ def run_interactive_controller():
 
         last_p1 = -1
         last_p2 = -1
+        last_reconnect_check = time.time()
 
         try:
             while running:
@@ -277,7 +341,13 @@ def run_interactive_controller():
                 if is_key_down(VK_ESCAPE) or is_key_down(VK_Q):
                     break
 
-                # Leitura direta do estado físico de cada botão (suporta teclas simultâneas e hold)
+                now = time.time()
+                # Watchdog de reconexao automatica (a cada 3s se desconectado)
+                if not bridge.connected and (now - last_reconnect_check > 3.0):
+                    last_reconnect_check = now
+                    bridge.connect()
+
+                # Leitura direta do estado físico de cada botão
                 p1 = 0
                 if is_key_down(VK_W): p1 |= BTN_UP
                 if is_key_down(VK_S): p1 |= BTN_DOWN
@@ -298,9 +368,9 @@ def run_interactive_controller():
                 if is_key_down(VK_NUMPAD5): p2 |= BTN_START
                 if is_key_down(VK_NUMPAD4): p2 |= BTN_SELECT
 
-                # Envia atualização apenas quando houver mudança de estado (taxa de amostragem: ~60-100 Hz)
+                # Envia atualização apenas quando houver mudança de estado (taxa de amostragem: ~60 Hz)
                 if p1 != last_p1 or p2 != last_p2:
-                    if has_bridge:
+                    if bridge.connected:
                         bridge.send_dual_mask(p1, p2)
                     if serial_bridge and serial_bridge.connected:
                         serial_bridge.send_dual_mask(p1, p2)
@@ -313,13 +383,12 @@ def run_interactive_controller():
         except KeyboardInterrupt:
             pass
         finally:
-            if has_bridge:
+            if bridge.connected:
                 bridge.send_dual_mask(0, 0)
                 bridge.close()
             if serial_bridge and serial_bridge.connected:
                 serial_bridge.send_dual_mask(0, 0)
                 serial_bridge.close()
-            print("\n[INFO] Sessao finalizada.")
             print("\n[INFO] Sessao finalizada.")
 
 
