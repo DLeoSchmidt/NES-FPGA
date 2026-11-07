@@ -51,6 +51,7 @@ let isFpgaConnected = false;
 let niosBridgeActive = false;
 let isFlashing = false;
 let reconnectTimer = null;
+let hasFirmwareLoaded = false;
 
 let currentP1Mask = 0;
 let currentP2Mask = 0;
@@ -289,6 +290,7 @@ function startNiosBridge() {
             console.log('[HARDWARE] [AVISO] Placa DE10-Lite foi desconectada. Modo Simulação ativo.');
         }
         isFpgaConnected = false;
+        hasFirmwareLoaded = false;
         currentCableName = null;
         niosBridgeActive = false;
         broadcastHardwareStatus();
@@ -304,6 +306,20 @@ function startNiosBridge() {
         try {
             execSync('taskkill /F /IM nios2-terminal.exe', { stdio: 'ignore', timeout: 2000 });
         } catch {}
+    }
+
+    // Auto-carregamento do firmware Nios II na SDRAM volátil (caso ainda não carregado)
+    if (!hasFirmwareLoaded && quartus) {
+        console.log(`[BRIDGE] Inicializando firmware Nios II na SDRAM via '${currentCableName}'...`);
+        try {
+            const ok = quartus.downloadNiosFirmware(currentCableName);
+            if (ok) {
+                hasFirmwareLoaded = true;
+                console.log('[BRIDGE] [OK] Firmware Nios II ativo na SDRAM!');
+            }
+        } catch (e) {
+            console.warn('[BRIDGE] Aviso ao inicializar firmware Nios II:', e.message);
+        }
     }
 
     const cmd = findNiosTerminal();
@@ -417,19 +433,23 @@ setInterval(() => {
 function sendDualMaskToFPGA(p1, p2) {
     currentP1Mask = p1 & 0xFF;
     currentP2Mask = p2 & 0xFF;
-    const packet = Buffer.from([SYNC_BYTE, currentP1Mask, currentP2Mask]);
+
+    // Frame ASCII HEX com terminação de linha: imune a filtragem de caracteres de controle de terminal
+    const p1Hex = currentP1Mask.toString(16).padStart(2, '0').toUpperCase();
+    const p2Hex = currentP2Mask.toString(16).padStart(2, '0').toUpperCase();
+    const asciiFrame = `!${p1Hex}${p2Hex}\n`;
 
     // 1. Envio JTAG UART (USB-Blaster)
     if (niosProcess && niosProcess.stdin && !niosProcess.stdin.destroyed) {
         try {
-            niosProcess.stdin.write(packet);
+            niosProcess.stdin.write(asciiFrame);
         } catch {}
     }
 
     // 2. Envio Serial DB9 (RS-232)
     if (serialBridgeProcess && serialBridgeProcess.stdin && !serialBridgeProcess.stdin.destroyed) {
         try {
-            serialBridgeProcess.stdin.write(packet);
+            serialBridgeProcess.stdin.write(asciiFrame);
         } catch {}
     }
 

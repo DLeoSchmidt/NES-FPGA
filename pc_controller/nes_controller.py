@@ -136,6 +136,31 @@ class NiosTerminalBridge:
 
         return "nios2-terminal"
 
+    def _ensure_firmware_loaded(self, cable_name: str):
+        """Carrega automaticamente o ELF do Nios II na SDRAM volátil caso necessário."""
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        elf_path = os.path.join(root_dir, "qsys", "software", "usb_controller", "usb_controller.elf")
+        if not os.path.isfile(elf_path):
+            return
+
+        shell_candidates = [
+            r"C:\intelFPGA_lite\18.1\nios2eds\Nios II Command Shell.bat",
+            r"C:\intelFPGA\18.1\nios2eds\Nios II Command Shell.bat",
+            r"C:\altera\18.1\nios2eds\Nios II Command Shell.bat"
+        ]
+        shell_path = next((s for s in shell_candidates if os.path.isfile(s)), None)
+        if not shell_path:
+            return
+
+        print(f"[BRIDGE] Inicializando firmware Nios II na SDRAM via '{cable_name}'...")
+        try:
+            norm_elf = elf_path.replace("\\", "/")
+            cmd = f'& "{shell_path}" nios2-download -g -c "{cable_name}" "{norm_elf}"'
+            subprocess.run(["powershell", "-NoProfile", "-Command", cmd], timeout=15, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print("[BRIDGE] [OK] Firmware Nios II ativo na SDRAM!")
+        except Exception as e:
+            print(f"[BRIDGE] Aviso ao inicializar firmware Nios II: {e}")
+
     def connect(self) -> bool:
         cables = list_jtag_cables()
         if not cables:
@@ -146,6 +171,17 @@ class NiosTerminalBridge:
             return False
 
         self.cable_name = cables[0]
+
+        # Garante liberação de processos anteriores
+        if sys.platform == "win32":
+            try:
+                subprocess.run(["taskkill", "/F", "/IM", "nios2-terminal.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+
+        # Auto-download do firmware Nios II na SDRAM
+        self._ensure_firmware_loaded(self.cable_name)
+
         cmd = [self.terminal_path, "-c", self.cable_name, "--quiet"]
         try:
             print(f"\n[HARDWARE] Placa Terasic DE10-Lite detectada via cabo '{self.cable_name}'.")
@@ -170,8 +206,9 @@ class NiosTerminalBridge:
         if not self.connected or not self.process or not self.process.stdin:
             return False
         try:
-            packet = bytes([SYNC_BYTE, p1 & 0xFF, p2 & 0xFF])
-            self.process.stdin.write(packet)
+            # Protocolo ASCII HEX imune a filtros de caracteres de controle
+            frame = f"!{p1 & 0xFF:02X}{p2 & 0xFF:02X}\n".encode("ascii")
+            self.process.stdin.write(frame)
             self.process.stdin.flush()
             return True
         except Exception:
@@ -223,8 +260,8 @@ class SerialDb9Bridge:
         if not self.connected or not self.serial_conn:
             return False
         try:
-            packet = bytes([SYNC_BYTE, p1 & 0xFF, p2 & 0xFF])
-            self.serial_conn.write(packet)
+            frame = f"!{p1 & 0xFF:02X}{p2 & 0xFF:02X}\n".encode("ascii")
+            self.serial_conn.write(frame)
             self.serial_conn.flush()
             return True
         except Exception:

@@ -54,12 +54,21 @@ const char* const devclasses[] = { " Uninitialized", " HID Keyboard", " HID Mous
 #define HID_CODE_A      0x0F
 
 #define JTAG_SYNC_HEADER 0x5A
+#define ASCII_FRAME_HEADER '!'
 
 static volatile alt_u8 g_pc_p1_mask     = 0;   // Player 1 vindo do PC
 static volatile alt_u8 g_pc_p2_mask     = 0;   // Player 2 vindo do PC
 static volatile alt_u8 g_usb_p1_mask    = 0;   // Player 1 vindo do Teclado USB físico
-static alt_u8 g_jtag_state              = 0;   // 0 = Sync (0x5A), 1 = P1, 2 = P2
+static alt_u8 g_jtag_state              = 0;   // 0 = Idle, 1 = Bin P1, 2 = Bin P2, 10-14 = ASCII Hex
+static alt_u8 g_hex_nibbles[4]          = {0}; // Buffer para decodificação ASCII hex
 static volatile alt_u16 g_rx_packet_cnt = 0;   // Telemetria: contador de pacotes recebidos com sucesso
+
+static inline alt_u8 hex_char_to_nibble(alt_u8 c) {
+	if (c >= '0' && c <= '9') return (c - '0');
+	if (c >= 'A' && c <= 'F') return (c - 'A' + 10);
+	if (c >= 'a' && c <= 'f') return (c - 'a' + 10);
+	return 0xFF; // Invalido
+}
 
 BYTE GetDriverandReport() {
 	BYTE i;
@@ -68,29 +77,14 @@ BYTE GetDriverandReport() {
 	BYTE tmpbyte;
 
 	DEV_RECORD* tpl_ptr;
-	printf("Reached USB_STATE_RUNNING (0x40)\n");
 	for (i = 1; i < USB_NUMDEVICES; i++) {
 		tpl_ptr = GetDevtable(i);
 		if (tpl_ptr->epinfo != NULL) {
-			printf("Device: %d", i);
-			printf("%s \n", devclasses[tpl_ptr->devclass]);
 			device = tpl_ptr->devclass;
 		}
 	}
-	// Query rate and protocol
 	rcode = XferGetIdle(addr, 0, hid_device.interface, 0, &tmpbyte);
-	if (rcode) {
-		printf("GetIdle Error. Error code: %x \n", rcode);
-	} else {
-		printf("Update rate: %x \n", tmpbyte);
-	}
-	printf("Protocol: ");
 	rcode = XferGetProto(addr, 0, hid_device.interface, &tmpbyte);
-	if (rcode) {
-		printf("GetProto Error. Error code %x \n", rcode);
-	} else {
-		printf("%d \n", tmpbyte);
-	}
 	return device;
 }
 
@@ -104,64 +98,32 @@ void clearLED(int LED) {
 			(IORD_ALTERA_AVALON_PIO_DATA(LED_BASE) & ~(0x001 << LED)));
 }
 
-void printSignedHex0(signed char value) {
-	BYTE tens = 0;
-	BYTE ones = 0;
-	WORD pio_val = IORD_ALTERA_AVALON_PIO_DATA(HEX_BASE);
-	if (value < 0) {
-		setLED(11);
-		value = -value;
-	} else {
-		clearLED(11);
+/* =========================================================================
+ * Transmissão Não-Bloqueante pela JTAG UART (Sem risco de congelamento)
+ * ========================================================================= */
+static inline void jtag_uart_putc_noblock(char c) {
+	if ((IORD_ALTERA_AVALON_JTAG_UART_CONTROL(JTAG_UART_0_BASE) & ALTERA_AVALON_JTAG_UART_CONTROL_WSPACE_MSK) != 0) {
+		IOWR_ALTERA_AVALON_JTAG_UART_DATA(JTAG_UART_0_BASE, (alt_u8)c);
 	}
-	if (value / 100)
-		setLED(13);
-	else
-		clearLED(13);
-
-	value = value % 100;
-	tens = value / 10;
-	ones = value % 10;
-
-	pio_val &= 0x00FF;
-	pio_val |= (tens << 12);
-	pio_val |= (ones << 8);
-
-	IOWR_ALTERA_AVALON_PIO_DATA(HEX_BASE, pio_val);
 }
 
-void printSignedHex1(signed char value) {
-	BYTE tens = 0;
-	BYTE ones = 0;
-	DWORD pio_val = IORD_ALTERA_AVALON_PIO_DATA(HEX_BASE);
-	if (value < 0) {
-		setLED(10);
-		value = -value;
-	} else {
-		clearLED(10);
+static void jtag_uart_puts_noblock(const char* s) {
+	while (*s) {
+		if ((IORD_ALTERA_AVALON_JTAG_UART_CONTROL(JTAG_UART_0_BASE) & ALTERA_AVALON_JTAG_UART_CONTROL_WSPACE_MSK) == 0) {
+			break;
+		}
+		IOWR_ALTERA_AVALON_JTAG_UART_DATA(JTAG_UART_0_BASE, (alt_u8)(*s++));
 	}
-	if (value / 100)
-		setLED(12);
-	else
-		clearLED(12);
-
-	value = value % 100;
-	tens = value / 10;
-	ones = value % 10;
-
-	pio_val &= 0xFF00;
-	pio_val |= (tens << 4);
-	pio_val |= (ones << 0);
-
-	IOWR_ALTERA_AVALON_PIO_DATA(HEX_BASE, pio_val);
 }
 
 /* =========================================================================
  * Polling Não-Bloqueante da JTAG UART (Recepção Dual Controller P1 + P2)
  * =========================================================================
- * Lê diretamente do FIFO de hardware do núcleo altera_avalon_jtag_uart.
- * Suporta tanto o frame binário sincronizado [0x5A, mask_p1, mask_p2] quanto
- * fallback para comandos interativos simples de terminal (WASD, K, L, G, H).
+ * Suporta 3 formatos simultâneos para máxima confiabilidade:
+ *   1. Formato ASCII HEX Seguro: "!<P1_HEX2><P2_HEX2>\n" (Ex: "!0100\n")
+ *      Imune a qualquer filtragem de caracteres de controle de TTY no Windows/Cygwin.
+ *   2. Formato Binário: [0x5A, mask_p1, mask_p2]
+ *   3. Caracteres ASCII Interativos: W, A, S, D, K, L, G, H
  * ========================================================================= */
 static void poll_jtag_uart(void) {
 	while (1) {
@@ -172,22 +134,51 @@ static void poll_jtag_uart(void) {
 
 		alt_u8 rx_byte = (alt_u8)(jtag_data & ALTERA_AVALON_JTAG_UART_DATA_DATA_MSK);
 
-		// Header 0x5A sempre força ressincronização imediata para robustez total
+		// Header ASCII '!' (Inicia frame hex de 4 nibbles: !P1_HI P1_LO P2_HI P2_LO)
+		if (rx_byte == ASCII_FRAME_HEADER) {
+			g_jtag_state = 10;
+			continue;
+		}
+
+		// Header Binário 0x5A
 		if (rx_byte == JTAG_SYNC_HEADER) {
 			g_jtag_state = 1;
 			continue;
 		}
 
+		// Maquina de estados de recepcao
+		if (g_jtag_state >= 10 && g_jtag_state <= 13) {
+			// Decodificacao do frame ASCII HEX: !<H0><H1><H2><H3>
+			alt_u8 nib = hex_char_to_nibble(rx_byte);
+			if (nib != 0xFF) {
+				g_hex_nibbles[g_jtag_state - 10] = nib;
+				g_jtag_state++;
+				if (g_jtag_state == 14) {
+					// Concluiu os 4 nibbles hexadecimais
+					g_pc_p1_mask = (g_hex_nibbles[0] << 4) | g_hex_nibbles[1];
+					g_pc_p2_mask = (g_hex_nibbles[2] << 4) | g_hex_nibbles[3];
+					g_rx_packet_cnt++;
+					g_jtag_state = 0;
+					jtag_uart_puts_noblock("OK\n"); // Confirmação ACK
+				}
+			} else if (rx_byte != '\r' && rx_byte != '\n') {
+				// Caractere invalido, reseta maquina de estados
+				g_jtag_state = 0;
+			}
+			continue;
+		}
+
 		switch (g_jtag_state) {
-			case 1: // Recebendo Máscara do Player 1
+			case 1: // Recebendo Máscara Binária do Player 1
 				g_pc_p1_mask = rx_byte;
 				g_jtag_state = 2;
 				break;
 
-			case 2: // Recebendo Máscara do Player 2
+			case 2: // Recebendo Máscara Binária do Player 2
 				g_pc_p2_mask = rx_byte;
-				g_jtag_state = 0; // Concluído pacote binário completo
+				g_jtag_state = 0;
 				g_rx_packet_cnt++;
+				jtag_uart_puts_noblock("OK\n");
 				break;
 
 			default:
@@ -202,6 +193,7 @@ static void poll_jtag_uart(void) {
 				else if (rx_byte == 'h' || rx_byte == 'H') g_pc_p1_mask ^= NES_BTN_START;
 				else if (rx_byte == ' ' || rx_byte == '0') { g_pc_p1_mask = 0; g_pc_p2_mask = 0; }
 				g_jtag_state = 0;
+				jtag_uart_puts_noblock("KEY\n");
 				break;
 		}
 	}
@@ -223,10 +215,6 @@ static void update_dual_keycodes(volatile unsigned int* keycode_pio) {
 	alt_u32 combined_word = ((alt_u32)telemetry << 16) | ((alt_u32)final_p2 << 8) | (alt_u32)final_p1;
 
 	*keycode_pio = combined_word;
-
-	// Exibe o estado nos displays HEX para feedback em tempo real
-	printSignedHex0((signed char)final_p1);
-	printSignedHex1((signed char)final_p2);
 }
 
 int main() {
@@ -248,10 +236,11 @@ int main() {
 	// 3. Inicializa os 32 bits de keycode zerados (Modo Dual Mask)
 	*keycode_pio = 0x00000000;
 
-	printf("\n======================================================\n");
-	printf(" NES-FPGA Dual Controller Bridge v2.0\n");
-	printf(" High-speed non-blocking JTAG UART driver active.\n");
-	printf("======================================================\n");
+	// Sinaliza inicialização do firmware de forma 100% não-bloqueante
+	jtag_uart_putc_noblock('R');
+	jtag_uart_putc_noblock('D');
+	jtag_uart_putc_noblock('Y');
+	jtag_uart_putc_noblock('\n');
 
 	// 4. Inicializa o chip USB MAX3421E com verificacao previa de presenca fisica
 	MAX3421E_init();
