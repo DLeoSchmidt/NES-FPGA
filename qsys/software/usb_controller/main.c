@@ -27,6 +27,7 @@
 #include "usb_kb/USB.h"
 
 extern HID_DEVICE hid_device;
+extern BYTE g_has_max3421e;
 
 static BYTE addr = 1; 				// hard-wired USB address
 const char* const devclasses[] = { " Uninitialized", " HID Keyboard", " HID Mouse", " Mass storage" };
@@ -54,10 +55,11 @@ const char* const devclasses[] = { " Uninitialized", " HID Keyboard", " HID Mous
 
 #define JTAG_SYNC_HEADER 0x5A
 
-static volatile alt_u8 g_pc_p1_mask  = 0;   // Player 1 vindo do PC
-static volatile alt_u8 g_pc_p2_mask  = 0;   // Player 2 vindo do PC
-static volatile alt_u8 g_usb_p1_mask = 0;   // Player 1 vindo do Teclado USB físico
-static alt_u8 g_jtag_state = 0;             // 0 = Sync (0x5A), 1 = P1, 2 = P2
+static volatile alt_u8 g_pc_p1_mask     = 0;   // Player 1 vindo do PC
+static volatile alt_u8 g_pc_p2_mask     = 0;   // Player 2 vindo do PC
+static volatile alt_u8 g_usb_p1_mask    = 0;   // Player 1 vindo do Teclado USB físico
+static alt_u8 g_jtag_state              = 0;   // 0 = Sync (0x5A), 1 = P1, 2 = P2
+static volatile alt_u16 g_rx_packet_cnt = 0;   // Telemetria: contador de pacotes recebidos com sucesso
 
 BYTE GetDriverandReport() {
 	BYTE i;
@@ -156,6 +158,10 @@ void printSignedHex1(signed char value) {
 
 /* =========================================================================
  * Polling Não-Bloqueante da JTAG UART (Recepção Dual Controller P1 + P2)
+ * =========================================================================
+ * Lê diretamente do FIFO de hardware do núcleo altera_avalon_jtag_uart.
+ * Suporta tanto o frame binário sincronizado [0x5A, mask_p1, mask_p2] quanto
+ * fallback para comandos interativos simples de terminal (WASD, K, L, G, H).
  * ========================================================================= */
 static void poll_jtag_uart(void) {
 	while (1) {
@@ -166,13 +172,13 @@ static void poll_jtag_uart(void) {
 
 		alt_u8 rx_byte = (alt_u8)(jtag_data & ALTERA_AVALON_JTAG_UART_DATA_DATA_MSK);
 
-		switch (g_jtag_state) {
-			case 0: // Aguardando Byte de Sincronismo (0x5A)
-				if (rx_byte == JTAG_SYNC_HEADER) {
-					g_jtag_state = 1;
-				}
-				break;
+		// Header 0x5A sempre força ressincronização imediata para robustez total
+		if (rx_byte == JTAG_SYNC_HEADER) {
+			g_jtag_state = 1;
+			continue;
+		}
 
+		switch (g_jtag_state) {
 			case 1: // Recebendo Máscara do Player 1
 				g_pc_p1_mask = rx_byte;
 				g_jtag_state = 2;
@@ -180,10 +186,21 @@ static void poll_jtag_uart(void) {
 
 			case 2: // Recebendo Máscara do Player 2
 				g_pc_p2_mask = rx_byte;
-				g_jtag_state = 0; // Concluído, pronto para próximo pacote
+				g_jtag_state = 0; // Concluído pacote binário completo
+				g_rx_packet_cnt++;
 				break;
 
 			default:
+				// Fallback interativo: caracteres ASCII simples via nios2-terminal manual
+				if (rx_byte == 'w' || rx_byte == 'W') g_pc_p1_mask ^= NES_BTN_UP;
+				else if (rx_byte == 's' || rx_byte == 'S') g_pc_p1_mask ^= NES_BTN_DOWN;
+				else if (rx_byte == 'a' || rx_byte == 'A') g_pc_p1_mask ^= NES_BTN_LEFT;
+				else if (rx_byte == 'd' || rx_byte == 'D') g_pc_p1_mask ^= NES_BTN_RIGHT;
+				else if (rx_byte == 'k' || rx_byte == 'K') g_pc_p1_mask ^= NES_BTN_B;
+				else if (rx_byte == 'l' || rx_byte == 'L') g_pc_p1_mask ^= NES_BTN_A;
+				else if (rx_byte == 'g' || rx_byte == 'G') g_pc_p1_mask ^= NES_BTN_SELECT;
+				else if (rx_byte == 'h' || rx_byte == 'H') g_pc_p1_mask ^= NES_BTN_START;
+				else if (rx_byte == ' ' || rx_byte == '0') { g_pc_p1_mask = 0; g_pc_p2_mask = 0; }
 				g_jtag_state = 0;
 				break;
 		}
@@ -195,13 +212,15 @@ static void poll_jtag_uart(void) {
  * =========================================================================
  *   keycode[7:0]   -> Player 1 (União de Teclado Físico USB + PC P1)
  *   keycode[15:8]  -> Player 2 (PC P2)
- *   keycode[31:16] -> 0x0000 (Sinaliza modo Dual Mask ao controller.sv)
+ *   keycode[23:16] -> Telemetria (Contador de pacotes recebidos / Status)
+ *   keycode[31:24] -> 0x00 (Obrigatório para ativar modo Dual Mask no controller.sv)
  * ========================================================================= */
 static void update_dual_keycodes(volatile unsigned int* keycode_pio) {
 	alt_u8 final_p1 = g_usb_p1_mask | g_pc_p1_mask;
 	alt_u8 final_p2 = g_pc_p2_mask;
+	alt_u8 telemetry = (alt_u8)(g_rx_packet_cnt & 0xFF);
 
-	alt_u32 combined_word = ((alt_u32)final_p2 << 8) | (alt_u32)final_p1;
+	alt_u32 combined_word = ((alt_u32)telemetry << 16) | ((alt_u32)final_p2 << 8) | (alt_u32)final_p1;
 
 	*keycode_pio = combined_word;
 
@@ -220,70 +239,86 @@ int main() {
 	BYTE errorflag = 0;
 	BYTE device = 0;
 
-	printf("NES-FPGA Dual Controller Bridge Ready (P1 + P2)\n");
+	// 1. Desabilita interrupcoes do JTAG UART para garantir leitura direta sem interferencia do HAL
+	IOWR_ALTERA_AVALON_JTAG_UART_CONTROL(JTAG_UART_0_BASE, 0x00);
 
-	// Inicializa o chip USB MAX3421E
+	// 2. Limpa quaisquer bytes residuais no FIFO da JTAG UART
+	while (IORD_ALTERA_AVALON_JTAG_UART_DATA(JTAG_UART_0_BASE) & ALTERA_AVALON_JTAG_UART_DATA_RVALID_MSK);
+
+	// 3. Inicializa os 32 bits de keycode zerados (Modo Dual Mask)
+	*keycode_pio = 0x00000000;
+
+	printf("\n======================================================\n");
+	printf(" NES-FPGA Dual Controller Bridge v2.0\n");
+	printf(" High-speed non-blocking JTAG UART driver active.\n");
+	printf("======================================================\n");
+
+	// 4. Inicializa o chip USB MAX3421E com verificacao previa de presenca fisica
 	MAX3421E_init();
-	USB_init();
+	if (g_has_max3421e) {
+		USB_init();
+	}
 
 	while (1) {
-		// 1. Polling prioritário de alta frequência da JTAG UART
+		// 1. Polling prioritário de ultra-alta frequência da JTAG UART (Sem interrupções/delays)
 		poll_jtag_uart();
 
-		// 2. Tarefas do USB Host Shield (MAX3421E)
-		MAX3421E_Task();
-		USB_Task();
+		// 2. Tarefas do USB Host Shield (Executadas SOMENTE se o hardware MAX3421E existir)
+		if (g_has_max3421e) {
+			MAX3421E_Task();
+			USB_Task();
 
-		if (GetUsbTaskState() == USB_STATE_RUNNING) {
-			if (!runningdebugflag) {
-				runningdebugflag = 1;
-				setLED(9);
-				device = GetDriverandReport();
-			} else if (device == 1) {
-				// Teclado USB físico conectado ao shield (Player 1)
-				rcode = kbdPoll(&kbdbuf);
-				if (rcode == hrSUCCESS) {
-					alt_u8 physical_mask = 0;
-					for (int i = 0; i < 6; i++) {
-						BYTE kc = kbdbuf.keycode[i];
-						if (kc == HID_CODE_UP) physical_mask |= NES_BTN_UP;
-						else if (kc == HID_CODE_DOWN) physical_mask |= NES_BTN_DOWN;
-						else if (kc == HID_CODE_LEFT) physical_mask |= NES_BTN_LEFT;
-						else if (kc == HID_CODE_RIGHT) physical_mask |= NES_BTN_RIGHT;
-						else if (kc == HID_CODE_A) physical_mask |= NES_BTN_A;
-						else if (kc == HID_CODE_B) physical_mask |= NES_BTN_B;
-						else if (kc == HID_CODE_START) physical_mask |= NES_BTN_START;
-						else if (kc == HID_CODE_SELECT) physical_mask |= NES_BTN_SELECT;
+			if (GetUsbTaskState() == USB_STATE_RUNNING) {
+				if (!runningdebugflag) {
+					runningdebugflag = 1;
+					setLED(9);
+					device = GetDriverandReport();
+				} else if (device == 1) {
+					// Teclado USB físico conectado ao shield (Player 1)
+					rcode = kbdPoll(&kbdbuf);
+					if (rcode == hrSUCCESS) {
+						alt_u8 physical_mask = 0;
+						for (int i = 0; i < 6; i++) {
+							BYTE kc = kbdbuf.keycode[i];
+							if (kc == HID_CODE_UP) physical_mask |= NES_BTN_UP;
+							else if (kc == HID_CODE_DOWN) physical_mask |= NES_BTN_DOWN;
+							else if (kc == HID_CODE_LEFT) physical_mask |= NES_BTN_LEFT;
+							else if (kc == HID_CODE_RIGHT) physical_mask |= NES_BTN_RIGHT;
+							else if (kc == HID_CODE_A) physical_mask |= NES_BTN_A;
+							else if (kc == HID_CODE_B) physical_mask |= NES_BTN_B;
+							else if (kc == HID_CODE_START) physical_mask |= NES_BTN_START;
+							else if (kc == HID_CODE_SELECT) physical_mask |= NES_BTN_SELECT;
+						}
+						g_usb_p1_mask = physical_mask;
 					}
-					g_usb_p1_mask = physical_mask;
+				} else if (device == 2) {
+					// Mouse USB preservado
+					rcode = mousePoll(&buf);
+					if (rcode == hrSUCCESS) {
+						if (buf.button & 0x04) setLED(2); else clearLED(2);
+						if (buf.button & 0x02) setLED(1); else clearLED(1);
+						if (buf.button & 0x01) setLED(0); else clearLED(0);
+					}
 				}
-			} else if (device == 2) {
-				// Mouse USB preservado
-				rcode = mousePoll(&buf);
-				if (rcode == hrSUCCESS) {
-					if (buf.button & 0x04) setLED(2); else clearLED(2);
-					if (buf.button & 0x02) setLED(1); else clearLED(1);
-					if (buf.button & 0x01) setLED(0); else clearLED(0);
+			} else if (GetUsbTaskState() == USB_STATE_ERROR) {
+				if (!errorflag) {
+					errorflag = 1;
+					clearLED(9);
 				}
-			}
-		} else if (GetUsbTaskState() == USB_STATE_ERROR) {
-			if (!errorflag) {
-				errorflag = 1;
+				g_usb_p1_mask = 0;
+			} else {
+				if (runningdebugflag) {
+					runningdebugflag = 0;
+					MAX3421E_init();
+					USB_init();
+				}
+				errorflag = 0;
 				clearLED(9);
+				g_usb_p1_mask = 0;
 			}
-			g_usb_p1_mask = 0;
-		} else {
-			if (runningdebugflag) {
-				runningdebugflag = 0;
-				MAX3421E_init();
-				USB_init();
-			}
-			errorflag = 0;
-			clearLED(9);
-			g_usb_p1_mask = 0;
 		}
 
-		// 3. Atualiza os registradores dos 2 controles no hardware do NES
+		// 3. Atualiza os registradores dos 2 controles no hardware do NES a cada iteracao
 		update_dual_keycodes(keycode_pio);
 	}
 	return 0;

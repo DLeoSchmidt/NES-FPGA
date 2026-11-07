@@ -2,10 +2,10 @@
 <sch:Settings xmlns:sch="http://www.altera.com/embeddedsw/bsp/schema">
         <BspType>hal</BspType>
         <BspVersion>default</BspVersion>
-        <BspGeneratedTimeStamp>Dec 28, 2021 7:52:28 PM</BspGeneratedTimeStamp>
-        <BspGeneratedUnixTimeStamp>1640739148958</BspGeneratedUnixTimeStamp>
-        <BspGeneratedLocation>C:\Users\Ian\Documents\code\verilog\NES-FPGA\qsys\software\usb_controller_bsp</BspGeneratedLocation>
-        <BspSettingsFile>settings.bsp</BspSettingsFile>
+        <BspGeneratedTimeStamp>07/11/2026 03:51:39</BspGeneratedTimeStamp>
+        <BspGeneratedUnixTimeStamp>1794030699454</BspGeneratedUnixTimeStamp>
+        <BspGeneratedLocation>C:\HDL\t4\NES-FPGA\qsys\software\usb_controller_bsp</BspGeneratedLocation>
+        <BspSettingsFile>.\settings.bsp</BspSettingsFile>
         <SopcDesignFile>..\..\NIOSIIe.sopcinfo</SopcDesignFile>
         <JdiFile>default</JdiFile>
         <Cpu>nios2_gen2_0</Cpu>

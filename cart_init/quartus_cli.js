@@ -27,11 +27,22 @@ const PROJECT_NAME = 'NES';
  */
 function findQuartusInstallations() {
     const searchRoots = [
+        'C:\\intelFPGA_lite\\18.1',
+        'C:\\intelFPGA\\18.1',
+        'C:\\altera\\18.1',
         process.env.QUARTUS_ROOTDIR,
-        'C:\\altera',
-        'C:\\intelFPGA',
         'C:\\intelFPGA_lite',
-        'C:\\intelFPGA_pro'
+        'C:\\intelFPGA',
+        'C:\\altera',
+        'C:\\intelFPGA_pro',
+        'D:\\intelFPGA_lite\\18.1',
+        'D:\\intelFPGA\\18.1',
+        'D:\\altera\\18.1',
+        'D:\\intelFPGA_lite',
+        'D:\\intelFPGA',
+        'D:\\altera',
+        'E:\\intelFPGA_lite\\18.1',
+        'E:\\intelFPGA_lite'
     ].filter(Boolean);
 
     const candidates = [];
@@ -62,10 +73,12 @@ function findQuartusInstallations() {
                     const versionMatch = binDir.match(/(\d+\.\d+(?:std|pro)?)/i);
                     const versionStr = versionMatch ? versionMatch[1] : (label || 'Desconhecida');
                     const versionNum = parseFloat(versionStr) || 0;
+                    const is18_1 = Math.abs(versionNum - 18.1) < 0.05 || versionStr.startsWith('18.1');
 
                     candidates.push({
                         version: versionStr,
                         versionNumber: versionNum,
+                        is18_1,
                         binDir,
                         hasCompiler,
                         hasProgrammer,
@@ -78,33 +91,43 @@ function findQuartusInstallations() {
                 }
             };
 
-            // 1. Procura subpastas de versão diretas (ex: C:\altera\13.1, C:\altera\25.1std)
-            const entries = fs.readdirSync(root, { withFileTypes: true });
-            for (const ent of entries) {
-                if (!ent.isDirectory()) continue;
-                const versionFolder = path.join(root, ent.name);
+            // 1. Procura subpastas de versão diretas (ex: C:\altera\13.1, C:\intelFPGA_lite\18.1)
+            const stat = fs.statSync(root);
+            if (stat.isDirectory()) {
+                // Checa direto na própria raiz se já contiver quartus/bin64
+                checkBinDir(path.join(root, 'quartus', 'bin64'), path.basename(root));
+                checkBinDir(path.join(root, 'quartus', 'bin'), path.basename(root));
+                checkBinDir(path.join(root, 'bin64'), path.basename(root));
+                checkBinDir(path.join(root, 'bin'), path.basename(root));
 
-                // Caminho padrão de instalação completa: <versão>\quartus\bin64
-                checkBinDir(path.join(versionFolder, 'quartus', 'bin64'), ent.name);
-                checkBinDir(path.join(versionFolder, 'quartus', 'bin'), ent.name);
+                const entries = fs.readdirSync(root, { withFileTypes: true });
+                for (const ent of entries) {
+                    if (!ent.isDirectory()) continue;
+                    const versionFolder = path.join(root, ent.name);
 
-                // Caminho de Quartus Programmer Standalone: <versão>\qprogrammer\bin64
-                checkBinDir(path.join(versionFolder, 'qprogrammer', 'bin64'), `${ent.name} (Programmer)`);
-                checkBinDir(path.join(versionFolder, 'qprogrammer', 'quartus', 'bin64'), `${ent.name} (Programmer)`);
+                    // Caminho padrão de instalação completa: <versão>\quartus\bin64
+                    checkBinDir(path.join(versionFolder, 'quartus', 'bin64'), ent.name);
+                    checkBinDir(path.join(versionFolder, 'quartus', 'bin'), ent.name);
+
+                    // Caminho de Quartus Programmer Standalone: <versão>\qprogrammer\bin64
+                    checkBinDir(path.join(versionFolder, 'qprogrammer', 'bin64'), `${ent.name} (Programmer)`);
+                    checkBinDir(path.join(versionFolder, 'qprogrammer', 'quartus', 'bin64'), `${ent.name} (Programmer)`);
+                }
             }
-
-            // 2. Verifica a própria pasta se estiver apontada via variável de ambiente
-            checkBinDir(path.join(root, 'bin64'), 'Env');
-            checkBinDir(path.join(root, 'bin'), 'Env');
         } catch {
             // Ignora pastas inacessíveis
         }
     }
 
-    // Ordena: primeiro os que possuem compilador e suportam MAX 10 (>= 18.1), por maior número de versão
+    // Ordenação estrita: Quartus 18.1 SEMPRE no topo com prioridade máxima
     candidates.sort((a, b) => {
+        // Prioridade 1: Versão 18.1 (testada e validada para MAX 10 deste projeto)
+        if (a.is18_1 !== b.is18_1) return a.is18_1 ? -1 : 1;
+        // Prioridade 2: Ter compilador completo (cdb + asm)
         if (a.hasCompiler !== b.hasCompiler) return a.hasCompiler ? -1 : 1;
+        // Prioridade 3: Suporte comprovado à família MAX 10 (>= 15.0)
         if (a.supportsMax10 !== b.supportsMax10) return a.supportsMax10 ? -1 : 1;
+        // Prioridade 4: Versão mais recente
         return b.versionNumber - a.versionNumber;
     });
 

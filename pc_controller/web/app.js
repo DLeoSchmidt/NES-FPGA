@@ -536,9 +536,103 @@ async function setupGameSwitcher() {
     }
 }
 
+// Gerenciador de Porta Serial RS-232 / DB9
+async function setupSerialManager() {
+    const selectPort = document.getElementById('select-serial-port');
+    const btnToggle = document.getElementById('btn-toggle-serial');
+    if (!selectPort || !btnToggle) return;
+
+    let isSerialConnected = false;
+
+    async function loadPorts() {
+        try {
+            const resp = await fetch('/api/serial/ports');
+            const data = await resp.json();
+            const ports = data.ports || [];
+
+            selectPort.innerHTML = '<option value="">JTAG UART (USB-Blaster)</option>';
+            for (const p of ports) {
+                const opt = document.createElement('option');
+                opt.value = p;
+                opt.textContent = `Serial DB9: ${p}`;
+                if (data.active && data.active.port === p) {
+                    opt.selected = true;
+                }
+                selectPort.appendChild(opt);
+            }
+
+            if (data.connected && data.active) {
+                isSerialConnected = true;
+                btnToggle.textContent = 'Desconectar DB9';
+                btnToggle.style.background = '#ef4444';
+            } else {
+                isSerialConnected = false;
+                btnToggle.textContent = 'Conectar DB9';
+                btnToggle.style.background = '#3b82f6';
+            }
+        } catch {
+            // Silencioso se backend offline
+        }
+    }
+
+    btnToggle.addEventListener('click', async () => {
+        const chosen = selectPort.value;
+        if (!isSerialConnected) {
+            if (!chosen) {
+                // Se nenhuma porta for selecionada no dropdown, tenta a Web Serial API do navegador se disponível
+                if ('serial' in navigator) {
+                    try {
+                        const port = await navigator.serial.requestPort();
+                        await port.open({ baudRate: 115200 });
+                        btnToggle.textContent = 'WebSerial Ativa';
+                        btnToggle.style.background = '#10b981';
+                        alert('Porta Serial conectada com sucesso via Web Serial API!');
+                        return;
+                    } catch (e) {
+                        alert('Falha ao abrir Web Serial: ' + e.message);
+                    }
+                } else {
+                    alert('Selecione uma porta serial COM no menu ao lado para conectar via conector DB9.');
+                }
+                return;
+            }
+
+            try {
+                btnToggle.disabled = true;
+                const resp = await fetch(`/api/serial/connect?port=${encodeURIComponent(chosen)}&baud=115200`);
+                const res = await resp.json();
+                if (res.connected) {
+                    isSerialConnected = true;
+                    btnToggle.textContent = 'Desconectar DB9';
+                    btnToggle.style.background = '#ef4444';
+                }
+            } catch (err) {
+                alert('Erro ao conectar porta serial: ' + err.message);
+            } finally {
+                btnToggle.disabled = false;
+            }
+        } else {
+            try {
+                btnToggle.disabled = true;
+                await fetch('/api/serial/connect');
+                isSerialConnected = false;
+                btnToggle.textContent = 'Conectar DB9';
+                btnToggle.style.background = '#3b82f6';
+            } catch (err) {
+                alert('Erro ao desconectar porta serial: ' + err.message);
+            } finally {
+                btnToggle.disabled = false;
+            }
+        }
+    });
+
+    loadPorts();
+}
+
 // Inicialização
 setupTouchControls();
 setupModal();
 setupGameSwitcher();
+setupSerialManager();
 connectWebSocket();
 requestAnimationFrame(updateInputs);

@@ -50,48 +50,189 @@ let currentP2Mask = 0;
 const wsClients = new Set();
 
 /**
- * Localiza o executável nios2-terminal nos caminhos comuns de instalação da Altera/Intel.
+ * Localiza o executável nios2-terminal nos caminhos de instalação da Altera/Intel,
+ * priorizando estritamente as instalações da versão 18.1 (compatíveis com o MAX 10).
  */
 function findNiosTerminal() {
-    const defaultRoots = [
-        'C:\\altera',
-        'C:\\intelFPGA',
-        'C:\\intelFPGA_lite',
-        process.env.QUARTUS_ROOTDIR || ''
+    // 1. Caminhos diretos conhecidos da versão 18.1 (prioridade máxima absoluta)
+    const priorityPaths = [
+        'C:\\intelFPGA_lite\\18.1\\quartus\\bin64\\nios2-terminal.exe',
+        'C:\\intelFPGA\\18.1\\quartus\\bin64\\nios2-terminal.exe',
+        'C:\\altera\\18.1\\quartus\\bin64\\nios2-terminal.exe',
+        'C:\\intelFPGA_lite\\18.1\\nios2eds\\bin\\nios2-terminal.exe',
+        'C:\\intelFPGA\\18.1\\nios2eds\\bin\\nios2-terminal.exe',
+        'D:\\intelFPGA_lite\\18.1\\quartus\\bin64\\nios2-terminal.exe',
+        'D:\\intelFPGA\\18.1\\quartus\\bin64\\nios2-terminal.exe',
+        'E:\\intelFPGA_lite\\18.1\\quartus\\bin64\\nios2-terminal.exe'
     ];
 
+    for (const p of priorityPaths) {
+        if (fs.existsSync(p)) {
+            console.log(`[BRIDGE] Executavel prioritario Quartus 18.1 localizado: ${p}`);
+            return p;
+        }
+    }
+
+    // 2. Raízes expandidas para busca dinâmica profunda
+    const defaultRoots = [
+        process.env.QUARTUS_ROOTDIR,
+        process.env.SOPC_KIT_NIOS2,
+        'C:\\intelFPGA_lite\\18.1',
+        'C:\\intelFPGA\\18.1',
+        'C:\\altera\\18.1',
+        'C:\\intelFPGA_lite',
+        'C:\\intelFPGA',
+        'C:\\intelFPGA_pro',
+        'C:\\altera',
+        'D:\\intelFPGA_lite\\18.1',
+        'D:\\intelFPGA\\18.1',
+        'D:\\intelFPGA_lite',
+        'D:\\intelFPGA',
+        'D:\\altera',
+        'E:\\intelFPGA_lite\\18.1',
+        'E:\\intelFPGA_lite',
+        'E:\\altera'
+    ].filter(Boolean);
+
+    const candidates = [];
+
     for (const root of defaultRoots) {
-        if (!root || !fs.existsSync(root)) continue;
+        if (!fs.existsSync(root)) continue;
         try {
             const findRecursive = (dir, depth = 0) => {
-                if (depth > 5) return null;
+                if (depth > 5) return;
                 const entries = fs.readdirSync(dir, { withFileTypes: true });
                 for (const entry of entries) {
                     const fullPath = path.join(dir, entry.name);
                     if (entry.isDirectory()) {
-                        const found = findRecursive(fullPath, depth + 1);
-                        if (found) return found;
+                        findRecursive(fullPath, depth + 1);
                     } else if (entry.name.toLowerCase() === 'nios2-terminal.exe' || entry.name.toLowerCase() === 'nios2-terminal') {
-                        return fullPath;
+                        candidates.push(fullPath);
                     }
                 }
-                return null;
             };
-            const found = findRecursive(root);
-            if (found) return found;
+            findRecursive(root);
         } catch {
-            // Ignora pastas protegidas
+            // Ignora pastas protegidas ou erros de permissão
         }
     }
+
+    if (candidates.length > 0) {
+        // Ordena colocando qualquer instalação contendo "18.1" no início
+        candidates.sort((a, b) => {
+            const a18 = a.includes('18.1') ? 1 : 0;
+            const b18 = b.includes('18.1') ? 1 : 0;
+            return b18 - a18;
+        });
+        console.log(`[BRIDGE] nios2-terminal selecionado via varredura: ${candidates[0]}`);
+        return candidates[0];
+    }
+
     return 'nios2-terminal';
+}
+
+// Gerenciador de Comunicação Serial RS-232 / DB9 (Nativo Windows)
+let serialBridgeProcess = null;
+let serialPortConfig = null;
+
+// Parseia argumentos CLI: --serial COM1 --baud 115200
+for (let i = 2; i < process.argv.length; i++) {
+    const arg = process.argv[i].toLowerCase();
+    if ((arg === '--serial' || arg === '-s') && process.argv[i + 1]) {
+        serialPortConfig = {
+            port: process.argv[++i].toUpperCase(),
+            baud: 115200
+        };
+    } else if (arg.startsWith('--serial=')) {
+        serialPortConfig = {
+            port: arg.split('=')[1].toUpperCase(),
+            baud: 115200
+        };
+    } else if ((arg === '--baud' || arg === '-b') && process.argv[i + 1]) {
+        if (serialPortConfig) serialPortConfig.baud = parseInt(process.argv[++i], 10) || 115200;
+    }
+}
+
+/**
+ * Lista as portas seriais COM disponíveis no sistema Windows.
+ */
+function listAvailableSerialPorts() {
+    try {
+        const out = execSync('powershell -NoProfile -Command "[System.IO.Ports.SerialPort]::GetPortNames()"', { encoding: 'utf-8', timeout: 3000 });
+        return out.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Inicializa a ponte de comunicação Serial RS-232 (conector DB9 / conversor USB-Serial).
+ */
+function initSerialBridge(portName, baudRate = 115200) {
+    if (!portName) return;
+
+    if (serialBridgeProcess) {
+        try { serialBridgeProcess.kill(); } catch {}
+        serialBridgeProcess = null;
+    }
+
+    console.log(`[SERIAL] Inicializando conector Serial DB9 / RS-232 em ${portName} a ${baudRate} bps...`);
+
+    try {
+        // Script inline em PowerShell para streaming contínuo de alta performance via SerialPort do .NET
+        const psScript = `
+            try {
+                $p = New-Object System.IO.Ports.SerialPort("${portName}", ${baudRate}, [System.IO.Ports.Parity]::None, 8, [System.IO.Ports.StopBits]::One)
+                $p.Handshake = [System.IO.Ports.Handshake]::None
+                $p.WriteTimeout = 500
+                $p.Open()
+                [Console]::Error.WriteLine("[SERIAL_OK]")
+                $stream = [Console]::OpenStandardInput()
+                $buf = New-Object byte[] 3
+                while ($true) {
+                    $read = $stream.Read($buf, 0, 3)
+                    if ($read -le 0) { break }
+                    $p.Write($buf, 0, $read)
+                }
+            } catch {
+                [Console]::Error.WriteLine("[SERIAL_ERR]: " + $_.Exception.Message)
+            } finally {
+                if ($p -and $p.IsOpen) { $p.Close() }
+            }
+        `;
+
+        serialBridgeProcess = spawn('powershell', ['-NoProfile', '-Command', psScript], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            windowsHide: true
+        });
+
+        serialBridgeProcess.stderr.on('data', (d) => {
+            const msg = d.toString();
+            if (msg.includes('[SERIAL_OK]')) {
+                console.log(`[SERIAL] [OK] Conectado com sucesso à porta Serial DB9 (${portName})!`);
+            } else if (msg.includes('[SERIAL_ERR]')) {
+                console.warn(`[SERIAL] Erro na porta serial ${portName}: ${msg.trim()}`);
+            }
+        });
+
+        serialBridgeProcess.on('exit', () => {
+            console.log(`[SERIAL] Ponte serial em ${portName} finalizada.`);
+            serialBridgeProcess = null;
+        });
+
+        serialPortConfig = { port: portName, baud: baudRate };
+    } catch (e) {
+        console.warn(`[SERIAL] Falha ao iniciar porta serial ${portName}: ${e.message}`);
+        serialBridgeProcess = null;
+    }
 }
 
 function initNiosBridge() {
     const cmd = findNiosTerminal();
-    console.log(`[BRIDGE] Conectando ao FPGA via: ${cmd}`);
+    console.log(`[BRIDGE] Conectando ao FPGA via JTAG UART: ${cmd}`);
 
     try {
-        niosProcess = spawn(cmd, [], {
+        niosProcess = spawn(cmd, ['--quiet'], {
             stdio: ['pipe', 'pipe', 'pipe'],
             windowsHide: true
         });
@@ -112,21 +253,38 @@ function initNiosBridge() {
         console.warn(`[AVISO] Falha ao instanciar nios2-terminal: ${e.message}`);
         niosProcess = null;
     }
+
+    if (serialPortConfig && serialPortConfig.port) {
+        initSerialBridge(serialPortConfig.port, serialPortConfig.baud);
+    }
 }
 
 /**
- * Transmite o frame de 3 bytes [0x5A, mask_p1, mask_p2] para o FPGA.
+ * Transmite o frame de 3 bytes [0x5A, mask_p1, mask_p2] para o FPGA via:
+ *   1. Cabo USB-Blaster (JTAG UART via nios2-terminal)
+ *   2. Conector Serial DB9 / RS-232 (se configurado)
+ *   3. Interface Web (WebSockets RFC 6455)
  */
 function sendDualMaskToFPGA(p1, p2) {
     currentP1Mask = p1 & 0xFF;
     currentP2Mask = p2 & 0xFF;
+    const packet = Buffer.from([SYNC_BYTE, currentP1Mask, currentP2Mask]);
 
+    // 1. Envio JTAG UART (USB-Blaster)
     if (niosProcess && niosProcess.stdin && !niosProcess.stdin.destroyed) {
-        const packet = Buffer.from([SYNC_BYTE, currentP1Mask, currentP2Mask]);
-        niosProcess.stdin.write(packet);
+        try {
+            niosProcess.stdin.write(packet);
+        } catch {}
     }
 
-    // Sincroniza todos os clientes Web conectados
+    // 2. Envio Serial DB9 (RS-232)
+    if (serialBridgeProcess && serialBridgeProcess.stdin && !serialBridgeProcess.stdin.destroyed) {
+        try {
+            serialBridgeProcess.stdin.write(packet);
+        } catch {}
+    }
+
+    // 3. Sincroniza todos os clientes Web conectados
     const statusPayload = JSON.stringify({ type: 'state2', p1: currentP1Mask, p2: currentP2Mask });
     for (const ws of wsClients) {
         sendWsText(ws, statusPayload);
@@ -162,6 +320,43 @@ const server = http.createServer((req, res) => {
         const active = switcher.getActiveGame();
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ catalog, active }));
+        return;
+    }
+
+    // API REST - Portas Seriais DB9 / RS-232 Disponíveis
+    if (req.url === '/api/serial/ports') {
+        const ports = listAvailableSerialPorts();
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+            ports,
+            active: serialPortConfig,
+            connected: Boolean(serialBridgeProcess)
+        }));
+        return;
+    }
+
+    // API REST - Conectar/Desconectar Porta Serial DB9
+    if (req.url.startsWith('/api/serial/connect')) {
+        const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+        const port = parsedUrl.searchParams.get('port');
+        const baud = parseInt(parsedUrl.searchParams.get('baud'), 10) || 115200;
+
+        if (port) {
+            initSerialBridge(port, baud);
+        } else {
+            if (serialBridgeProcess) {
+                try { serialBridgeProcess.kill(); } catch {}
+                serialBridgeProcess = null;
+            }
+            serialPortConfig = null;
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+            success: true,
+            active: serialPortConfig,
+            connected: Boolean(serialBridgeProcess)
+        }));
         return;
     }
 

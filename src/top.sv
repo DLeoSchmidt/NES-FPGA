@@ -274,7 +274,34 @@ always_ff @ (posedge nes_clk) begin
 end
 always_comb begin
 
-	{hex5_v, hex4_v, hex3_v, hex2_v, hex1_v, hex0_v} = keycode[31:8];
+	// =========================================================================
+	// Modo Debug Ativo nos Displays de 7 Segmentos (HEX0 a HEX5)
+	// =========================================================================
+	// Permite visualizar o estado exato de cada botão pressionado em tempo real:
+	//   HEX1-HEX0: Player 1 [7:0] (A, B, Select, Start, Up, Down, Left, Right)
+	//   HEX3-HEX2: Player 2 [7:0] (mesmo formato)
+	//   HEX5-HEX4: Modo Debug ("dE") ou Telemetria de Pacotes Recebidos (SW[0])
+	// =========================================================================
+	if (keycode[31:24] != 8'h00) begin
+		// Modo Legado Scancodes USB HID (Preservado)
+		{hex5_v, hex4_v, hex3_v, hex2_v, hex1_v, hex0_v} = keycode[31:8];
+	end else begin
+		// Modo Dual Mask / PC Controller (Modo Debug de Botões Ativo)
+		hex0_v = keycode[3:0];    // Player 1 D-Pad (Right, Left, Down, Up)
+		hex1_v = keycode[7:4];    // Player 1 Botões (Start, Select, B, A)
+		hex2_v = keycode[11:8];   // Player 2 D-Pad
+		hex3_v = keycode[15:12];  // Player 2 Botões
+
+		if (SW_sync[0]) begin
+			// Com SW[0] ligado, HEX5-HEX4 exibem o contador de pacotes recebidos (00 a FF)
+			hex4_v = keycode[19:16];
+			hex5_v = keycode[23:20];
+		end else begin
+			// Com SW[0] desligado, exibe "dE" (Debug Enabled)
+			hex4_v = 4'hE; // Letra 'E'
+			hex5_v = 4'hD; // Letra 'd'
+		end
+	end
 
 	oam_addr0 = ppu_oam_addr0;
 	oam_din0 = 0;

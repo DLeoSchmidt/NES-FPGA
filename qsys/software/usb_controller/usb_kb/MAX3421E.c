@@ -98,19 +98,47 @@ BYTE* MAXbytes_rd(BYTE reg, BYTE nbytes, BYTE* data) {
 	if (code < 0) printf("error MAXbytes_rd");
 	return (data + nbytes);
 }
+// Flag global indicando se a placa de expansao USB MAX3421E esta fisicamente presente
+BYTE g_has_max3421e = 0;
+
+/* Detecta de forma rapida e nao-bloqueante se o chip MAX3421E responde no barramento SPI */
+BYTE MAX3421E_detect(void) {
+	// Escreve e le padroes no registrador rIOPINS1 para validar presenca do hardware
+	MAXreg_wr(rIOPINS1, 0x55);
+	BYTE v1 = MAXreg_rd(rIOPINS1);
+	MAXreg_wr(rIOPINS1, 0xAA);
+	BYTE v2 = MAXreg_rd(rIOPINS1);
+
+	// Se ambos baterem com os dados escritos, o chip SPI esta conectado
+	if (v1 == 0x55 && v2 == 0xAA) {
+		g_has_max3421e = 1;
+		printf("[USB] MAX3421E detectado no barramento SPI!\n");
+		return 1;
+	}
+
+	// Sem resposta no barramento SPI (placa de expansao ausente)
+	g_has_max3421e = 0;
+	printf("[USB] MAX3421E nao detectado. Operando exclusivamente via JTAG/PC.\n");
+	return 0;
+}
+
 /* reset MAX3421E using chip reset bit. SPI configuration is not affected   */
 void MAX3421E_reset(void) {
+	if (!g_has_max3421e) return;
+
 	//hardware reset, then software reset
 	IOWR_ALTERA_AVALON_PIO_DATA(USB_RST_BASE, 0);
-	usleep(1000000);
+	usleep(20000); // 20ms e mais que suficiente para o reset fisico do MAX3421E
 	IOWR_ALTERA_AVALON_PIO_DATA(USB_RST_BASE, 1);
 	BYTE tmp = 0;
 	MAXreg_wr( rUSBCTL, bmCHIPRES);      //Chip reset. This stops the oscillator
 	MAXreg_wr( rUSBCTL, 0x00);                          //Remove the reset
 	while (!(MAXreg_rd( rUSBIRQ) & bmOSCOKIRQ)) { //wait until the PLL stabilizes
-		tmp++;                                      //timeout after 256 attempts
+		tmp++;                                      //timeout apos 255 tentativas
 		if (tmp == 0) {
-			printf("reset timeout!");
+			printf("reset timeout!\n");
+			g_has_max3421e = 0;
+			break; // Interrompe para nao travar a execucao do Nios II
 		}
 	}
 }
@@ -172,9 +200,13 @@ void MAX_busprobe(void) {
 }
 /* MAX3421E initialization after power-on   */
 void MAX3421E_init(void) {
+	if (!MAX3421E_detect()) return;
+
 	/* Configure full-duplex SPI, interrupt pulse   */
 	MAXreg_wr( rPINCTL, (bmFDUPSPI + bmINTLEVEL + bmGPXB)); //Full-duplex SPI, level interrupt, GPX
 	MAX3421E_reset();                                //stop/start the oscillator
+	if (!g_has_max3421e) return;
+
 	/* configure power switch   */
 	Vbus_power( OFF);                                      //turn Vbus power off
 	MAXreg_wr( rGPINIEN, bmGPINIEN7); //enable interrupt on GPIN7 (power switch overload flag)
@@ -192,6 +224,8 @@ void MAX3421E_init(void) {
 
 /* MAX3421 state change task and interrupt handler */
 void MAX3421E_Task(void) {
+	if (!g_has_max3421e) return;
+
 	if ( IORD_ALTERA_AVALON_PIO_DATA(USB_IRQ_BASE) == 0) {
 		printf("MAX interrupt\n\r");
 		MaxIntHandler();

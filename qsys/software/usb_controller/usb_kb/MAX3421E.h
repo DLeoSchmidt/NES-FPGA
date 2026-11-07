@@ -236,6 +236,8 @@ BYTE MAXreg_rd(BYTE reg);
 BYTE* MAXbytes_rd(BYTE reg, BYTE nbytes, BYTE *data);
 void MAX3421E_reset(void);
 BOOL Vbus_power(BOOL action);
+BYTE MAX3421E_detect(void);
+extern BYTE g_has_max3421e;
 void MAX3421E_init(void);
 void MAX_busprobe(void);
 void MAX3421E_Task(void);

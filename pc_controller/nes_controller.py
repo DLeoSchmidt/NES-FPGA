@@ -37,32 +37,68 @@ class NiosTerminalBridge:
         self.connected = False
 
     def _find_nios2_terminal(self) -> str:
-        import shutil
-        found = shutil.which("nios2-terminal")
-        if found:
-            return found
+        # 1. Caminhos conhecidos de alta prioridade da versao 18.1
+        priority_paths = [
+            r"C:\intelFPGA_lite\18.1\quartus\bin64\nios2-terminal.exe",
+            r"C:\intelFPGA\18.1\quartus\bin64\nios2-terminal.exe",
+            r"C:\altera\18.1\quartus\bin64\nios2-terminal.exe",
+            r"C:\intelFPGA_lite\18.1\nios2eds\bin\nios2-terminal.exe",
+            r"C:\intelFPGA\18.1\nios2eds\bin\nios2-terminal.exe",
+            r"D:\intelFPGA_lite\18.1\quartus\bin64\nios2-terminal.exe",
+            r"D:\intelFPGA\18.1\quartus\bin64\nios2-terminal.exe",
+            r"E:\intelFPGA_lite\18.1\quartus\bin64\nios2-terminal.exe"
+        ]
+        for p in priority_paths:
+            if os.path.isfile(p):
+                print(f"[BRIDGE] Executavel prioritario Quartus 18.1 localizado: {p}")
+                return p
 
+        # 2. Raizes expandidas para busca dinamica profunda
         search_roots = [
-            r"C:\altera",
-            r"C:\intelFPGA",
+            os.environ.get("QUARTUS_ROOTDIR", ""),
+            os.environ.get("SOPC_KIT_NIOS2", ""),
+            r"C:\intelFPGA_lite\18.1",
+            r"C:\intelFPGA\18.1",
+            r"C:\altera\18.1",
             r"C:\intelFPGA_lite",
-            os.environ.get("QUARTUS_ROOTDIR", "")
+            r"C:\intelFPGA",
+            r"C:\intelFPGA_pro",
+            r"C:\altera",
+            r"D:\intelFPGA_lite\18.1",
+            r"D:\intelFPGA\18.1",
+            r"D:\intelFPGA_lite",
+            r"D:\intelFPGA",
+            r"D:\altera",
+            r"E:\intelFPGA_lite\18.1",
+            r"E:\intelFPGA_lite"
         ]
 
+        candidates = []
         for root in search_roots:
             if not root or not os.path.isdir(root):
                 continue
             for dirpath, _, filenames in os.walk(root):
                 for f in filenames:
                     if f.lower() in ("nios2-terminal.exe", "nios2-terminal"):
-                        return os.path.join(dirpath, f)
+                        candidates.append(os.path.join(dirpath, f))
+
+        if candidates:
+            # Prioriza estritamente os executaveis contendo '18.1'
+            candidates.sort(key=lambda x: (1 if "18.1" in x else 0), reverse=True)
+            print(f"[BRIDGE] nios2-terminal selecionado via varredura: {candidates[0]}")
+            return candidates[0]
+
+        import shutil
+        found = shutil.which("nios2-terminal")
+        if found:
+            return found
 
         return "nios2-terminal"
 
     def connect(self) -> bool:
-        cmd = [self.terminal_path]
+        cmd = [self.terminal_path, "--quiet"]
         try:
-            print(f"[BRIDGE] Conectando ao FPGA via: {self.terminal_path}")
+            print(f"[BRIDGE] Conectando ao FPGA via JTAG UART: {self.terminal_path}")
             self.process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
@@ -99,15 +135,91 @@ class NiosTerminalBridge:
         self.connected = False
 
 
+class SerialDb9Bridge:
+    """Ponte de comunicacao via porta Serial RS-232 / conector DB9 / USB-Serial."""
+    def __init__(self, port: Optional[str] = None, baudrate: int = 115200):
+        self.port = port
+        self.baudrate = baudrate
+        self.serial_conn = None
+        self.connected = False
+
+    def connect(self) -> bool:
+        if not self.port:
+            return False
+
+        try:
+            import serial
+            self.serial_conn = serial.Serial(self.port, self.baudrate, timeout=0.1)
+            self.connected = True
+            print(f"[SERIAL] [OK] Conectado a porta Serial DB9 ({self.port}) a {self.baudrate} bps.")
+            return True
+        except ImportError:
+            print("[SERIAL] [AVISO] Pacote pyserial nao instalado. Para suporte Serial RS-232, execute: pip install pyserial")
+            return False
+        except Exception as ex:
+            print(f"[SERIAL] [AVISO] Falha ao abrir porta serial {self.port}: {ex}")
+            return False
+
+    def send_dual_mask(self, p1: int, p2: int) -> bool:
+        if not self.connected or not self.serial_conn:
+            return False
+        try:
+            packet = bytes([SYNC_BYTE, p1 & 0xFF, p2 & 0xFF])
+            self.serial_conn.write(packet)
+            self.serial_conn.flush()
+            return True
+        except Exception:
+            self.connected = False
+            return False
+
+    def close(self):
+        if self.serial_conn:
+            try:
+                self.serial_conn.close()
+            except Exception:
+                pass
+            self.serial_conn = None
+        self.connected = False
+
+
 def run_interactive_controller():
+    # Processa argumentos de linha de comando: --serial COMx --baud 115200
+    serial_port = None
+    serial_baud = 115200
+
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i].lower()
+        if (arg == "--serial" or arg == "-s") and i + 1 < len(sys.argv):
+            serial_port = sys.argv[i + 1].upper()
+            i += 1
+        elif arg.startswith("--serial="):
+            serial_port = arg.split("=")[1].upper()
+        elif (arg == "--baud" or arg == "-b") and i + 1 < len(sys.argv):
+            try:
+                serial_baud = int(sys.argv[i + 1])
+            except ValueError:
+                pass
+            i += 1
+        i += 1
+
+    # 1. Ponte JTAG UART (Cabo USB-Blaster)
     bridge = NiosTerminalBridge()
     has_bridge = bridge.connect()
+
+    # 2. Ponte Serial DB9 / RS-232 (se configurada)
+    serial_bridge = None
+    if serial_port:
+        serial_bridge = SerialDb9Bridge(serial_port, serial_baud)
+        serial_bridge.connect()
 
     print("\n" + "=" * 70)
     print("      NES-FPGA DUAL CONTROLLER - PYTHON CONSOLE EDITION      ")
     print("=" * 70)
     print(" Player 1: WASD (Direcional) | K (A) | J (B) | Enter (Start) | U (Select)")
     print(" Player 2: Setas (Direcional) | X (A) | Z (B)")
+    if serial_bridge and serial_bridge.connected:
+        print(f" Conexao Serial DB9 Ativa: {serial_port} @ {serial_baud} bps")
     print(" Sair: ESC ou Q")
     print("=" * 70 + "\n")
 
@@ -190,6 +302,8 @@ def run_interactive_controller():
                 if p1 != last_p1 or p2 != last_p2:
                     if has_bridge:
                         bridge.send_dual_mask(p1, p2)
+                    if serial_bridge and serial_bridge.connected:
+                        serial_bridge.send_dual_mask(p1, p2)
                     render_status(p1, p2)
                     last_p1 = p1
                     last_p2 = p2
@@ -202,6 +316,10 @@ def run_interactive_controller():
             if has_bridge:
                 bridge.send_dual_mask(0, 0)
                 bridge.close()
+            if serial_bridge and serial_bridge.connected:
+                serial_bridge.send_dual_mask(0, 0)
+                serial_bridge.close()
+            print("\n[INFO] Sessao finalizada.")
             print("\n[INFO] Sessao finalizada.")
 
 

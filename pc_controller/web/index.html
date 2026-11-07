@@ -28,6 +28,15 @@
                     ⚡ Gravar FPGA
                 </button>
             </div>
+            <div class="serial-switch-bar" style="display: flex; align-items: center; gap: 8px;">
+                <span class="serial-icon" title="Porta Serial RS-232 / DB9">🔌</span>
+                <select id="select-serial-port" class="serial-select" title="Selecione a porta Serial COM (conector DB9 ou conversor USB-Serial)" style="background: #2a2a2e; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; font-size: 13px;">
+                    <option value="">JTAG UART (USB-Blaster)</option>
+                </select>
+                <button id="btn-toggle-serial" class="btn-serial" title="Conectar conector Serial DB9 / RS-232" style="background: #3b82f6; color: #fff; border: none; border-radius: 4px; padding: 5px 10px; font-size: 13px; cursor: pointer;">
+                    Conectar DB9
+                </button>
+            </div>
             <div class="top-actions">
                 <button id="btn-open-settings" class="btn-primary">
                     <span class="icon">⚙️</span> Teclas

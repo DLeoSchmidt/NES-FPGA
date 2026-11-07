@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <EnsembleReport name="NIOSIIe" kind="system" version="18.1" fabric="QSYS">
  <!-- Format version 18.1 625 (Future versions may contain additional information.) -->
- <!-- 2021.12.10.01:13:09 -->
+ <!-- 2026.11.07.03:51:05 -->
  <!-- A collection of modules and connections -->
  <parameter name="clockCrossingAdapter">
   <type>com.altera.sopcmodel.ensemble.EClockAdapter</type>
@@ -53,7 +53,7 @@
  </parameter>
  <parameter name="generationId">
   <type>int</type>
-  <value>1639120334</value>
+  <value>1794030601</value>
   <derived>false</derived>
   <enabled>true</enabled>
   <visible>true</visible>
@@ -15070,7 +15070,7 @@ the requested settings for a module instance. -->
   </assignment>
   <assignment>
    <name>embeddedsw.CMacro.TIMESTAMP</name>
-   <value>1639120334</value>
+   <value>1794030601</value>
   </assignment>
   <assignment>
    <name>embeddedsw.dts.compatible</name>
@@ -15090,7 +15090,7 @@ the requested settings for a module instance. -->
   </assignment>
   <assignment>
    <name>embeddedsw.dts.params.timestamp</name>
-   <value>1639120334</value>
+   <value>1794030601</value>
   </assignment>
   <assignment>
    <name>embeddedsw.dts.vendor</name>
@@ -15106,7 +15106,7 @@ the requested settings for a module instance. -->
   </parameter>
   <parameter name="timestamp">
    <type>int</type>
-   <value>1639120334</value>
+   <value>1794030601</value>
    <derived>true</derived>
    <enabled>false</enabled>
    <visible>false</visible>
@@ -29634,5 +29634,5 @@ parameters are a RESULT of the module parameters. -->
   <version>18.1</version>
  </plugin>
  <reportVersion>18.1 625</reportVersion>
- <uniqueIdentifier>24EE9A27DD870000017DA32F8918</uniqueIdentifier>
+ <uniqueIdentifier>C03532B08F6D000001A1B48EA4AB</uniqueIdentifier>
 </EnsembleReport>
