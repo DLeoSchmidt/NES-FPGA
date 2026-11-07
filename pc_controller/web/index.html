@@ -8,45 +8,58 @@
 </head>
 <body>
     <div class="app-layout">
-        <header>
-            <div class="brand">
-                <h1>NES-FPGA Dual Controller</h1>
-                <span class="badge-system">2-Player Independent Core</span>
-            </div>
-            <div class="cartridge-switch-bar">
-                <div class="cart-label">
-                    <span class="cart-icon">📼</span>
-                    <span class="cart-title">Cartucho:</span>
+        <header class="app-header">
+            <!-- Linha Superior: Marca e Status Global -->
+            <div class="header-main-row">
+                <div class="brand">
+                    <h1>NES-FPGA Dual Controller</h1>
+                    <span class="badge-system">2-Player Core</span>
                 </div>
-                <select id="select-game" class="game-select" title="Selecione o jogo NROM (Mapper 0) para carregar">
-                    <option value="" disabled selected>Carregando catálogo...</option>
-                </select>
-                <button id="btn-switch-mif" class="btn-cart-mif" title="Apenas altera os arquivos MIF em cart_init/ (instantâneo)">
-                    📼 Trocar MIF
-                </button>
-                <button id="btn-build-sof" class="btn-cart-build" title="Altera MIF e recompila o bitstream NES.sof com o Quartus Assembler">
-                    ⚙️ Gerar .SOF
-                </button>
-                <button id="btn-flash-game" class="btn-cart-flash" title="1-Click: Altera MIF + Recompila com Assembler + Grava na FPGA via Quartus Programmer">
-                    ⚡ Gravar na Placa
-                </button>
+                <div class="top-actions">
+                    <button id="btn-open-settings" class="btn-primary">
+                        <span class="icon">⚙️</span> Teclas
+                    </button>
+                    <div class="status-bar">
+                        <span id="connection-indicator" class="dot disconnected"></span>
+                        <span id="connection-status">Desconectado</span>
+                    </div>
+                </div>
             </div>
-            <div class="serial-switch-bar" style="display: flex; align-items: center; gap: 8px;">
-                <span class="serial-icon" title="Porta Serial RS-232 / DB9">🔌</span>
-                <select id="select-serial-port" class="serial-select" title="Selecione a porta Serial COM (conector DB9 ou conversor USB-Serial)" style="background: #2a2a2e; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; font-size: 13px;">
-                    <option value="">JTAG UART (USB-Blaster)</option>
-                </select>
-                <button id="btn-toggle-serial" class="btn-serial" title="Conectar conector Serial DB9 / RS-232" style="background: #3b82f6; color: #fff; border: none; border-radius: 4px; padding: 5px 10px; font-size: 13px; cursor: pointer;">
-                    Conectar DB9
-                </button>
-            </div>
-            <div class="top-actions">
-                <button id="btn-open-settings" class="btn-primary">
-                    <span class="icon">⚙️</span> Teclas
-                </button>
-                <div class="status-bar">
-                    <span id="connection-indicator" class="dot disconnected"></span>
-                    <span id="connection-status">Desconectado</span>
+
+            <!-- Linha de Ferramentas: Cartuchos e Conexão Serial DB9 -->
+            <div class="header-tools-row">
+                <div class="cartridge-switch-bar">
+                    <div class="cart-label">
+                        <span class="cart-icon">📼</span>
+                        <span class="cart-title">Cartucho:</span>
+                    </div>
+                    <select id="select-game" class="game-select" title="Selecione o jogo NROM (Mapper 0) para carregar">
+                        <option value="" disabled selected>Carregando catálogo...</option>
+                    </select>
+                    <div class="cart-actions-group">
+                        <button id="btn-switch-mif" class="btn-cart-mif" title="Apenas altera os arquivos MIF em cart_init/ (instantâneo)">
+                            📼 Trocar MIF
+                        </button>
+                        <button id="btn-build-sof" class="btn-cart-build" title="Altera MIF e recompila o bitstream NES.sof com o Quartus Assembler">
+                            ⚙️ Gerar .SOF
+                        </button>
+                        <button id="btn-flash-game" class="btn-cart-flash" title="1-Click: Altera MIF + Recompila com Assembler + Grava na FPGA via Quartus Programmer">
+                            ⚡ Gravar na Placa
+                        </button>
+                    </div>
+                </div>
+
+                <div class="serial-switch-bar">
+                    <div class="serial-label">
+                        <span class="serial-icon" title="Porta Serial RS-232 / DB9">🔌</span>
+                        <span class="serial-title">Serial DB9:</span>
+                    </div>
+                    <select id="select-serial-port" class="serial-select" title="Selecione a porta Serial COM (conector DB9 ou conversor USB-Serial)">
+                        <option value="">JTAG UART (USB-Blaster)</option>
+                    </select>
+                    <button id="btn-toggle-serial" class="btn-serial" title="Conectar conector Serial DB9 / RS-232">
+                        Conectar DB9
+                    </button>
                 </div>
             </div>
         </header>
