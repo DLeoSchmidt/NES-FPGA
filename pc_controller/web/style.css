@@ -1011,10 +1011,11 @@ h1 {
     }
 }
 
-/* Tablets e Janelas Reduzidas (<= 880px) */
-@media (max-width: 880px) {
+/* Laptops Compactos e Tablets (<= 1080px): Linha dedicada para Cartucho e Serial */
+@media (max-width: 1080px) {
     .header-tools-row {
         flex-direction: column;
+        gap: 10px;
     }
 
     .cartridge-switch-bar,
@@ -1034,8 +1035,8 @@ h1 {
     }
 }
 
-/* Smartphones e Telas Estreitas (<= 600px) */
-@media (max-width: 600px) {
+/* Smartphones e Telas Estreitas (<= 650px) */
+@media (max-width: 650px) {
     body {
         padding: 8px;
     }
@@ -1062,6 +1063,11 @@ h1 {
         justify-content: space-between;
     }
 
+    .cartridge-switch-bar {
+        padding: 10px;
+        gap: 8px;
+    }
+
     .cart-actions-group {
         width: 100%;
         display: grid;
@@ -1076,6 +1082,33 @@ h1 {
         font-size: 0.72rem;
         text-align: center;
         width: 100%;
+    }
+
+    /* Barra Serial DB9 ajustada em telas menores */
+    .serial-switch-bar {
+        padding: 10px;
+        gap: 8px;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .serial-label {
+        font-size: 0.78rem;
+        flex-shrink: 0;
+    }
+
+    .serial-select {
+        flex: 1 1 140px;
+        min-width: 0;
+        font-size: 0.78rem;
+    }
+
+    .btn-serial {
+        flex-shrink: 0;
+        padding: 6px 12px;
+        font-size: 0.78rem;
     }
 
     .player-panel {
@@ -1177,17 +1210,55 @@ h1 {
     }
 }
 
-/* Telas Ultra-Estreitas (<= 420px) */
-@media (max-width: 420px) {
+/* Telas Ultra-Estreitas e Smartphones Verticais (<= 460px) */
+@media (max-width: 460px) {
+    .cartridge-switch-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .cart-label {
+        width: 100%;
+    }
+
+    .game-select {
+        width: 100%;
+        flex: 1 1 auto;
+    }
+
     .cart-actions-group {
         grid-template-columns: 1fr;
+        width: 100%;
     }
 
     .btn-cart-mif,
     .btn-cart-build,
     .btn-cart-flash {
-        padding: 7px 10px;
+        padding: 8px 10px;
         font-size: 0.78rem;
+    }
+
+    /* Serial DB9 em coluna única sem risco de corte lateral */
+    .serial-switch-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+
+    .serial-label {
+        width: 100%;
+    }
+
+    .serial-select {
+        width: 100%;
+        flex: 1 1 auto;
+    }
+
+    .btn-serial {
+        width: 100%;
+        flex: 1 1 auto;
+        padding: 8px 10px;
+        text-align: center;
     }
 
     .dpad-zone {
