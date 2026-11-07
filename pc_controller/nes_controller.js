@@ -41,7 +41,7 @@ const BTN_B      = 1 << 6;
 const BTN_A      = 1 << 7;
 
 const SYNC_BYTE  = 0x5A;
-const HTTP_PORT  = 8080;
+const HTTP_PORT  = parseInt(process.env.PORT, 10) || 8080;
 
 /** @type {import('child_process').ChildProcessWithoutNullStreams | null} */
 let niosProcess = null;
@@ -395,7 +395,17 @@ const server = http.createServer((req, res) => {
         }
         const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
         const slug = parsedUrl.searchParams.get('slug');
-        const doFlash = parsedUrl.searchParams.get('flash') === '1' || parsedUrl.searchParams.get('flash') === 'true';
+        const rawAction = (parsedUrl.searchParams.get('action') || '').toLowerCase().trim();
+        const doFlashParam = parsedUrl.searchParams.get('flash') === '1' || parsedUrl.searchParams.get('flash') === 'true';
+
+        let action = 'mif';
+        if (rawAction === 'build') {
+            action = 'build';
+        } else if (rawAction === 'flash' || doFlashParam) {
+            action = 'flash';
+        } else if (rawAction === 'mif') {
+            action = 'mif';
+        }
 
         if (!slug) {
             res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -403,12 +413,61 @@ const server = http.createServer((req, res) => {
             return;
         }
         try {
-            switcher.switchGame(slug, { flash: doFlash });
+            const doBuild = action === 'build' || action === 'flash';
+            const doFlash = action === 'flash';
+
+            const switchRes = switcher.switchGame(slug, { build: doBuild, flash: doFlash });
             const active = switcher.getActiveGame();
-            broadcastWsText(JSON.stringify({ type: 'game_changed', active }));
+            broadcastWsText(JSON.stringify({ type: 'game_changed', active, action }));
+
+            // Consulta se há cabos JTAG USB-Blaster conectados
+            let cables = [];
+            let cableConnected = false;
+            let cableName = null;
+            if (quartus) {
+                try {
+                    cables = quartus.listJtagCables();
+                    cableConnected = Array.isArray(cables) && cables.length > 0;
+                    cableName = cableConnected ? cables[0] : null;
+                } catch (cableErr) {
+                    console.warn('[JTAG] Falha ao verificar cabos:', cableErr.message);
+                }
+            }
+
+            const pipelineInfo = (switchRes && switchRes.pipeline) || {};
+            const sofGenerated = doBuild ? (pipelineInfo.sofGenerated !== undefined ? pipelineInfo.sofGenerated : true) : false;
+            const flashed = !!pipelineInfo.flashed;
+
+            let message = '';
+            if (action === 'mif') {
+                message = `Arquivos MIF atualizados para '${active.title}'. Para carregar na FPGA, clique em 'Gerar .SOF' ou 'Gravar na Placa'.`;
+            } else if (action === 'build') {
+                message = `Bitstream NES.sof gerado com sucesso pelo Quartus Assembler! Pronto para gravação na placa DE10-Lite.`;
+            } else if (action === 'flash') {
+                if (flashed && cableConnected) {
+                    message = `Bitstream gravado com sucesso no FPGA via cabo '${cableName}'! O jogo '${active.title}' já está rodando.`;
+                } else if (!cableConnected) {
+                    message = `Bitstream NES.sof gerado com sucesso, mas a placa DE10-Lite NÃO foi detectada via USB-Blaster. Conecte o cabo USB da placa e clique em 'Gravar na Placa'.`;
+                } else {
+                    message = `Bitstream compilado, porém houve aviso na gravação JTAG. Verifique a chave de energia e conexão do cabo USB.`;
+                }
+            }
+
             res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-            res.end(JSON.stringify({ success: true, active, flashed: doFlash }));
+            res.end(JSON.stringify({
+                success: true,
+                action,
+                active,
+                mifUpdated: true,
+                sofGenerated,
+                flashed,
+                cableConnected,
+                cableName,
+                message,
+                pipeline: pipelineInfo
+            }));
         } catch (err) {
+            console.error(`[ERRO API] /api/switch-game: ${err.message}`);
             res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ success: false, error: err.message }));
         }

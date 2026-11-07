@@ -303,6 +303,16 @@ Abra um terminal (PowerShell ou CMD) na raiz do projeto (`C:\HDL\t4\NES-FPGA`):
 > A compilação completa do projeto no Quartus leva de **3 a 7 minutos**. Quando você deseja apenas trocar o jogo que está no cartucho, **não é necessário recompilar todo o projeto**. 
 > O Quartus permite atualizar apenas os blocos de memória interna (`prg.mif` e `chr.mif`) e rodar apenas o Assembler, levando **menos de 15 segundos**.
 
+### 6.1 Os 3 Modos de Operação (Web e CLI):
+
+O sistema oferece 3 níveis bem definidos de ação para troca de cartuchos:
+
+| Ação | Botão na Web | Comando no Terminal | O que faz por baixo dos panos | Tempo |
+|---|---|---|---|---|
+| **1. Trocar MIF** | `📼 Trocar MIF` | `node cart_init/switch_game.js <slug>` | Copia `prg.mif` e `chr.mif` para `cart_init/` e raiz. Não roda compilação. | **< 0.1s** |
+| **2. Gerar .SOF** | `⚙️ Gerar .SOF` | `node cart_init/switch_game.js <slug> --build` | Copia os MIFs + roda `quartus_cdb --update_mif` + roda `quartus_asm` gerando `output_files/NES.sof`. | **~7s** |
+| **3. Gravar FPGA** | `⚡ Gravar na Placa` | `node cart_init/switch_game.js <slug> --flash` | Executa os 3 passos: copia MIFs + compila `.sof` + grava no FPGA via `quartus_pgm`. Caso a placa não esteja conectada, gera o `.sof` e exibe aviso claro de ausência de cabo USB. | **~10s** |
+
 ### Via Terminal com 1 Comando (Recomendado):
 O sistema possui 57 jogos NROM Mapper 0 catalogados e convertidos. Basta executar:
 ```bash
@@ -318,7 +328,7 @@ O script automaticamente:
 1. Copia o `prg.mif` e `chr.mif` do jogo para a raiz.
 2. Executa `quartus_cdb --update_mif NES`.
 3. Executa `quartus_asm NES` gerando o novo `output_files/NES.sof`.
-4. Executa `quartus_pgm` e programa a placa DE10-Lite instantaneamente.
+4. Executa `quartus_pgm` e programa a placa DE10-Lite instantaneamente (ou avisa se a placa não estiver conectada ao cabo USB).
 
 Para pesquisar jogos disponíveis:
 ```bash

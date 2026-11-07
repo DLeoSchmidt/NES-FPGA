@@ -281,9 +281,20 @@ function programFpga(programmer, cableName = null, onLog = console.log, { requir
 
 /**
  * Executa o pipeline automatizado de troca e gravação.
+ * Retorna um objeto detalhado com o status de cada etapa do processo.
  */
 function runPipeline({ switchMif = true, doUpdateMif = true, doAsm = true, doFlash = true, slug = null, onLog = console.log } = {}) {
     const toolchain = getBestToolchain();
+    const result = {
+        success: false,
+        mifUpdated: false,
+        sofGenerated: false,
+        flashed: false,
+        cableConnected: false,
+        cableName: null,
+        error: null,
+        warning: null
+    };
 
     onLog('='.repeat(70));
     onLog('             NES-FPGA - PIPELINE AUTOMATIZADO QUARTUS               ');
@@ -294,6 +305,7 @@ function runPipeline({ switchMif = true, doUpdateMif = true, doAsm = true, doFla
         const switcher = require('./switch_game.js');
         onLog(`[PASSO 1/4] Alternando arquivos MIF para o jogo: '${slug}'...`);
         switcher.switchGame(slug);
+        result.mifUpdated = true;
     }
 
     // 2. Atualiza MIF no banco de dados do Quartus
@@ -302,10 +314,12 @@ function runPipeline({ switchMif = true, doUpdateMif = true, doAsm = true, doFla
             onLog('\n[AVISO] Compilador Quartus Prime (>= 18.1) não detectado nesta máquina.');
             onLog('  -> No PC do laboratório (ou com Quartus 18.1/24.1 instalado), este passo é 100% automático.');
             onLog('  -> Alternativa manual: No Quartus, pressione Ctrl+Shift+U.');
-            return false;
+            result.warning = 'Compilador Quartus Prime não localizado.';
+            return result;
         }
         onLog('\n[PASSO 2/4] Atualizando inicialização de memória no banco de dados...');
         updateMif(toolchain.compiler, onLog);
+        result.mifUpdated = true;
     }
 
     // 3. Executa o Assembler
@@ -313,26 +327,38 @@ function runPipeline({ switchMif = true, doUpdateMif = true, doAsm = true, doFla
         if (!toolchain.compiler) {
             onLog('\n[AVISO] Quartus Assembler não disponível sem a instalação do compilador.');
             onLog('  -> Alternativa manual: No Quartus, pressione Ctrl+L.');
-            return false;
+            result.warning = 'Compilador Quartus Prime não localizado.';
+            return result;
         }
         onLog('\n[PASSO 3/4] Recompilando bitstream (quartus_asm)...');
         runAssembler(toolchain.compiler, onLog);
+        result.sofGenerated = true;
     }
 
     // 4. Grava na placa via Programmer (tolerante à ausência de cabo JTAG)
     if (doFlash) {
         if (!toolchain.programmer) {
             onLog('\n[AVISO] Nenhum programador (quartus_pgm) encontrado.');
-            return false;
+            result.warning = 'Gravador quartus_pgm não localizado.';
+            return result;
         }
+        const cables = listJtagCables(toolchain.programmer.pgm);
+        result.cableConnected = cables.length > 0;
+        result.cableName = cables[0] || null;
+
         onLog('\n[PASSO 4/4] Gravando bitstream .sof na FPGA DE10-Lite...');
-        programFpga(toolchain.programmer, null, onLog, { requireCable: false });
+        const flashSuccess = programFpga(toolchain.programmer, null, onLog, { requireCable: false });
+        result.flashed = !!flashSuccess;
+        if (!flashSuccess && !result.cableConnected) {
+            result.warning = 'Bitstream NES.sof gerado com sucesso, mas nenhum cabo USB-Blaster foi detectado.';
+        }
     }
 
     onLog('='.repeat(70));
     onLog('[CONCLUÍDO] Pipeline executado com êxito!');
     onLog('='.repeat(70));
-    return true;
+    result.success = true;
+    return result;
 }
 
 // Execução direta via CLI para diagnóstico

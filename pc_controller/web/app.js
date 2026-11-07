@@ -88,14 +88,24 @@ const ui = {
     btnResetDefaults: document.getElementById('btn-reset-defaults'),
     // Elementos do Cartridge Switcher
     selectGame: document.getElementById('select-game'),
-    btnSwitchGame: document.getElementById('btn-switch-game'),
+    btnSwitchMif: document.getElementById('btn-switch-mif') || document.getElementById('btn-switch-game'),
+    btnBuildSof: document.getElementById('btn-build-sof'),
     btnFlashGame: document.getElementById('btn-flash-game'),
     switchModal: document.getElementById('switch-modal'),
+    modalTitleText: document.getElementById('modal-title-text'),
     modalGameName: document.getElementById('modal-game-name'),
     badgeMapper: document.getElementById('badge-mapper'),
     badgeMirror: document.getElementById('badge-mirror'),
     badgePrg: document.getElementById('badge-prg'),
     badgeChr: document.getElementById('badge-chr'),
+    stepStatusMif: document.getElementById('step-status-mif'),
+    stepStatusSof: document.getElementById('step-status-sof'),
+    stepStatusJtag: document.getElementById('step-status-jtag'),
+    modalAlertBox: document.getElementById('modal-alert-box'),
+    modalAlertIcon: document.getElementById('modal-alert-icon'),
+    modalAlertTitle: document.getElementById('modal-alert-title'),
+    modalAlertDesc: document.getElementById('modal-alert-desc'),
+    modalManualSteps: document.getElementById('modal-manual-steps'),
     btnCloseSwitchModal: document.getElementById('btn-close-switch-modal'),
     btnOkSwitchModal: document.getElementById('btn-ok-switch-modal')
 };
@@ -420,10 +430,151 @@ function setupModal() {
 }
 
 /**
+ * Renderiza dinamicamente o modal de atualização de jogo e pipeline do Quartus.
+ * Exibe o status de cada etapa e alertas claros sobre gravação e cabos JTAG.
+ */
+function renderSwitchModal(result) {
+    if (!result || !result.active) return;
+    const act = result.active;
+    const action = result.action || 'mif';
+
+    if (ui.modalGameName) ui.modalGameName.textContent = act.title;
+    if (ui.badgeMapper) ui.badgeMapper.textContent = act.mapperType || 'Mapper 0';
+    if (ui.badgeMirror) ui.badgeMirror.textContent = `Espelhamento: ${act.mirroring}`;
+    if (ui.badgePrg) ui.badgePrg.textContent = `PRG: ${act.prgSizeKB || 32} KB`;
+    if (ui.badgeChr) ui.badgeChr.textContent = `CHR: ${act.chrSizeKB || 8} KB`;
+
+    // Função auxiliar para atualizar badges dos passos
+    function setStepBadge(badgeEl, text, type) {
+        if (!badgeEl) return;
+        badgeEl.textContent = text;
+        badgeEl.className = `step-badge badge-${type}`;
+    }
+
+    // 1. Arquivos MIF sempre atualizados
+    setStepBadge(ui.stepStatusMif, 'Atualizado ✓', 'success');
+
+    // 2. Quartus Assembler (.SOF)
+    if (action === 'build' || action === 'flash') {
+        if (result.sofGenerated) {
+            setStepBadge(ui.stepStatusSof, 'Gerado .SOF ✓', 'success');
+        } else {
+            setStepBadge(ui.stepStatusSof, 'Falha no Build ✕', 'error');
+        }
+    } else {
+        setStepBadge(ui.stepStatusSof, 'Pendente', 'neutral');
+    }
+
+    // 3. Gravação FPGA (JTAG)
+    if (action === 'flash') {
+        if (result.flashed && result.cableConnected) {
+            setStepBadge(ui.stepStatusJtag, 'Gravado ✓', 'success');
+        } else if (!result.cableConnected) {
+            setStepBadge(ui.stepStatusJtag, 'Sem Cabo ⚠️', 'warning');
+        } else {
+            setStepBadge(ui.stepStatusJtag, 'Falha JTAG ✕', 'error');
+        }
+    } else {
+        setStepBadge(ui.stepStatusJtag, 'Não Solicitado', 'neutral');
+    }
+
+    // Configuração dos Alertas e Mensagens Contextuais
+    if (ui.modalAlertBox) {
+        ui.modalAlertBox.className = 'modal-alert-box';
+    }
+
+    if (action === 'mif') {
+        if (ui.modalTitleText) ui.modalTitleText.textContent = 'MIF Atualizado';
+        if (ui.modalAlertBox) ui.modalAlertBox.classList.add('alert-info');
+        if (ui.modalAlertIcon) ui.modalAlertIcon.textContent = 'ℹ️';
+        if (ui.modalAlertTitle) ui.modalAlertTitle.textContent = 'Arquivos MIF prontos em cart_init/';
+        if (ui.modalAlertDesc) {
+            ui.modalAlertDesc.textContent = `Os dados de PRG/CHR do jogo '${act.title}' foram carregados no diretório do projeto. Para aplicar na FPGA automaticamente, clique em "⚙️ Gerar .SOF" ou "⚡ Gravar na Placa". Se preferir o Quartus Prime GUI, siga o passo a passo abaixo.`;
+        }
+        if (ui.modalManualSteps) ui.modalManualSteps.style.display = 'block';
+    } else if (action === 'build') {
+        if (ui.modalTitleText) ui.modalTitleText.textContent = 'Bitstream .SOF Compilado';
+        if (ui.modalAlertBox) ui.modalAlertBox.classList.add('alert-success');
+        if (ui.modalAlertIcon) ui.modalAlertIcon.textContent = '⚙️';
+        if (ui.modalAlertTitle) ui.modalAlertTitle.textContent = 'Bitstream NES.sof gerado com sucesso!';
+        if (ui.modalAlertDesc) {
+            ui.modalAlertDesc.textContent = `O Assembler do Intel Quartus Prime 18.1 gerou o arquivo 'output_files/NES.sof' atualizado. Para transferir agora mesmo para a placa DE10-Lite, clique no botão "⚡ Gravar na Placa".`;
+        }
+        if (ui.modalManualSteps) ui.modalManualSteps.style.display = 'none';
+    } else if (action === 'flash') {
+        if (result.flashed && result.cableConnected) {
+            if (ui.modalTitleText) ui.modalTitleText.textContent = 'Gravado com Sucesso no FPGA';
+            if (ui.modalAlertBox) ui.modalAlertBox.classList.add('alert-success');
+            if (ui.modalAlertIcon) ui.modalAlertIcon.textContent = '⚡';
+            if (ui.modalAlertTitle) ui.modalAlertTitle.textContent = 'Placa DE10-Lite atualizada com sucesso!';
+            const cableInfo = result.cableName ? `via cabo '${result.cableName}'` : 'via USB-Blaster';
+            if (ui.modalAlertDesc) {
+                ui.modalAlertDesc.textContent = `O bitstream foi compilado e gravado no FPGA ${cableInfo}. O jogo '${act.title}' já está pronto e em execução no hardware!`;
+            }
+        } else if (!result.cableConnected) {
+            if (ui.modalTitleText) ui.modalTitleText.textContent = 'Bitstream Gerado (Cabo USB Ausente)';
+            if (ui.modalAlertBox) ui.modalAlertBox.classList.add('alert-warning');
+            if (ui.modalAlertIcon) ui.modalAlertIcon.textContent = '⚠️';
+            if (ui.modalAlertTitle) ui.modalAlertTitle.textContent = 'Placa DE10-Lite não detectada na porta USB';
+            if (ui.modalAlertDesc) {
+                ui.modalAlertDesc.textContent = `O arquivo 'output_files/NES.sof' foi gerado perfeitamente pelo Quartus 18.1, mas nenhum gravador USB-Blaster foi detectado no PC. Conecte o cabo USB da placa DE10-Lite, certifique-se de que a placa está ligada e clique em "⚡ Gravar na Placa".`;
+            }
+        } else {
+            if (ui.modalTitleText) ui.modalTitleText.textContent = 'Aviso de Gravação';
+            if (ui.modalAlertBox) ui.modalAlertBox.classList.add('alert-error');
+            if (ui.modalAlertIcon) ui.modalAlertIcon.textContent = '❌';
+            if (ui.modalAlertTitle) ui.modalAlertTitle.textContent = 'Erro ao transferir para a placa';
+            if (ui.modalAlertDesc) {
+                ui.modalAlertDesc.textContent = result.message || 'Houve uma falha na execução do quartus_pgm.';
+            }
+        }
+        if (ui.modalManualSteps) ui.modalManualSteps.style.display = 'none';
+    }
+
+    if (ui.switchModal) {
+        ui.switchModal.classList.remove('hidden');
+    }
+}
+
+/**
+ * Executa uma das 3 ações de cartucho:
+ * - 'mif': Copia prg.mif e chr.mif (instantâneo)
+ * - 'build': Copia MIFs + roda Assembler gerando .SOF
+ * - 'flash': Copia MIFs + Assembler + Grava no FPGA DE10-Lite
+ */
+async function executeGameAction(action, btnElement, loadingText, defaultText) {
+    const slug = ui.selectGame ? ui.selectGame.value : null;
+    if (!slug) {
+        alert('Por favor, selecione um jogo no menu de cartuchos.');
+        return;
+    }
+
+    const allBtns = [ui.btnSwitchMif, ui.btnBuildSof, ui.btnFlashGame].filter(Boolean);
+    allBtns.forEach(b => b.disabled = true);
+    if (btnElement) btnElement.textContent = loadingText;
+
+    try {
+        const resp = await fetch(`/api/switch-game?slug=${encodeURIComponent(slug)}&action=${encodeURIComponent(action)}`);
+        const result = await resp.json();
+
+        if (result.success) {
+            renderSwitchModal(result);
+        } else {
+            alert('Erro na automação do cartucho: ' + (result.error || 'Falha desconhecida'));
+        }
+    } catch (err) {
+        alert('Erro de comunicação com o servidor: ' + err.message);
+    } finally {
+        allBtns.forEach(b => b.disabled = false);
+        if (btnElement) btnElement.textContent = defaultText;
+    }
+}
+
+/**
  * Gerenciador do Seletor de Cartuchos e Troca de Jogos
  */
 async function setupGameSwitcher() {
-    if (!ui.selectGame || !ui.btnSwitchGame) return;
+    if (!ui.selectGame) return;
 
     try {
         const resp = await fetch('/api/games');
@@ -456,71 +607,28 @@ async function setupGameSwitcher() {
             ui.selectGame.value = active.slug;
         }
 
-        ui.btnSwitchGame.addEventListener('click', async () => {
-            const slug = ui.selectGame.value;
-            if (!slug) return;
-
-            ui.btnSwitchGame.disabled = true;
-            ui.btnSwitchGame.textContent = 'Trocando...';
-
-            try {
-                const switchResp = await fetch(`/api/switch-game?slug=${encodeURIComponent(slug)}`);
-                const result = await switchResp.json();
-
-                if (result.success && result.active) {
-                    const act = result.active;
-                    ui.modalGameName.textContent = act.title;
-                    ui.badgeMapper.textContent = act.mapperType || 'Mapper 0';
-                    ui.badgeMirror.textContent = `Espelhamento: ${act.mirroring}`;
-                    ui.badgePrg.textContent = `PRG: ${act.prgSizeKB || 32} KB`;
-                    ui.badgeChr.textContent = `CHR: ${act.chrSizeKB || 8} KB`;
-
-                    ui.switchModal.classList.remove('hidden');
-                } else {
-                    alert('Erro ao trocar jogo: ' + (result.error || 'Falha desconhecida'));
-                }
-            } catch (err) {
-                alert('Erro de rede ao trocar jogo: ' + err.message);
-            } finally {
-                ui.btnSwitchGame.disabled = false;
-                ui.btnSwitchGame.textContent = 'Trocar MIF';
-            }
-        });
-
-        if (ui.btnFlashGame) {
-            ui.btnFlashGame.addEventListener('click', async () => {
-                const slug = ui.selectGame.value;
-                if (!slug) return;
-
-                ui.btnFlashGame.disabled = true;
-                ui.btnFlashGame.textContent = 'Gravando...';
-
-                try {
-                    const switchResp = await fetch(`/api/switch-game?slug=${encodeURIComponent(slug)}&flash=1`);
-                    const result = await switchResp.json();
-
-                    if (result.success && result.active) {
-                        const act = result.active;
-                        ui.modalGameName.textContent = act.title;
-                        ui.badgeMapper.textContent = act.mapperType || 'Mapper 0';
-                        ui.badgeMirror.textContent = `Espelhamento: ${act.mirroring}`;
-                        ui.badgePrg.textContent = `PRG: ${act.prgSizeKB || 32} KB`;
-                        ui.badgeChr.textContent = `CHR: ${act.chrSizeKB || 8} KB`;
-
-                        ui.switchModal.classList.remove('hidden');
-                    } else {
-                        alert('Aviso da gravação via terminal: ' + (result.error || 'Falha'));
-                    }
-                } catch (err) {
-                    alert('Erro de rede: ' + err.message);
-                } finally {
-                    ui.btnFlashGame.disabled = false;
-                    ui.btnFlashGame.textContent = '⚡ Gravar FPGA';
-                }
+        // 1. Botão "Trocar MIF" (apenas copia arquivos)
+        if (ui.btnSwitchMif) {
+            ui.btnSwitchMif.addEventListener('click', () => {
+                executeGameAction('mif', ui.btnSwitchMif, 'Trocando...', '📼 Trocar MIF');
             });
         }
 
-        // Fechamento do modal de instruções
+        // 2. Botão "Gerar .SOF" (troca MIF + compila com Assembler)
+        if (ui.btnBuildSof) {
+            ui.btnBuildSof.addEventListener('click', () => {
+                executeGameAction('build', ui.btnBuildSof, 'Compilando...', '⚙️ Gerar .SOF');
+            });
+        }
+
+        // 3. Botão "Gravar na Placa" (troca MIF + compila .SOF + grava no FPGA via JTAG)
+        if (ui.btnFlashGame) {
+            ui.btnFlashGame.addEventListener('click', () => {
+                executeGameAction('flash', ui.btnFlashGame, 'Gravando...', '⚡ Gravar na Placa');
+            });
+        }
+
+        // Fechamento do modal de instruções e status
         if (ui.btnCloseSwitchModal) {
             ui.btnCloseSwitchModal.addEventListener('click', () => {
                 ui.switchModal.classList.add('hidden');

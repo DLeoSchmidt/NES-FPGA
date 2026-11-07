@@ -21,11 +21,14 @@
                 <select id="select-game" class="game-select" title="Selecione o jogo NROM (Mapper 0) para carregar">
                     <option value="" disabled selected>Carregando catálogo...</option>
                 </select>
-                <button id="btn-switch-game" class="btn-cart-switch" title="Apenas altera os arquivos MIF em cart_init/">
-                    Trocar MIF
+                <button id="btn-switch-mif" class="btn-cart-mif" title="Apenas altera os arquivos MIF em cart_init/ (instantâneo)">
+                    📼 Trocar MIF
                 </button>
-                <button id="btn-flash-game" class="btn-cart-flash" title="1-Click: Altera MIF + Recompila com Assembler + Grava na FPGA via Quartus CLI">
-                    ⚡ Gravar FPGA
+                <button id="btn-build-sof" class="btn-cart-build" title="Altera MIF e recompila o bitstream NES.sof com o Quartus Assembler">
+                    ⚙️ Gerar .SOF
+                </button>
+                <button id="btn-flash-game" class="btn-cart-flash" title="1-Click: Altera MIF + Recompila com Assembler + Grava na FPGA via Quartus Programmer">
+                    ⚡ Gravar na Placa
                 </button>
             </div>
             <div class="serial-switch-bar" style="display: flex; align-items: center; gap: 8px;">
@@ -228,11 +231,11 @@
         </div>
     </div>
 
-    <!-- Modal de Instruções de Atualização na FPGA -->
+    <!-- Modal de Instruções e Status de Atualização na FPGA -->
     <div id="switch-modal" class="modal-overlay hidden">
         <div class="modal-card">
             <div class="modal-header">
-                <h2>🎮 Cartucho Atualizado: <span id="modal-game-name">Super Mario Bros.</span></h2>
+                <h2>🎮 <span id="modal-title-text">Cartucho Atualizado</span>: <span id="modal-game-name">Super Mario Bros.</span></h2>
                 <button id="btn-close-switch-modal" class="btn-close">✕</button>
             </div>
             <div class="modal-body-switch">
@@ -242,13 +245,48 @@
                     <span id="badge-prg" class="badge-tag">PRG: 32 KB</span>
                     <span id="badge-chr" class="badge-tag">CHR: 8 KB</span>
                 </div>
-                <p class="switch-lead">Os arquivos <code>cart_init/prg.mif</code> e <code>chr.mif</code> foram atualizados com sucesso!</p>
-                <div class="quartus-steps">
-                    <h3>Passos Rápidos no Intel Quartus (sem recompilar tudo):</h3>
+
+                <!-- Pipeline Status Cards -->
+                <div class="pipeline-status-grid">
+                    <div id="step-card-mif" class="step-card step-done">
+                        <div class="step-icon">📼</div>
+                        <div class="step-info">
+                            <span class="step-name">1. Arquivos MIF</span>
+                            <span id="step-status-mif" class="step-badge badge-success">Atualizado</span>
+                        </div>
+                    </div>
+                    <div id="step-card-sof" class="step-card">
+                        <div class="step-icon">⚙️</div>
+                        <div class="step-info">
+                            <span class="step-name">2. Compilar .SOF</span>
+                            <span id="step-status-sof" class="step-badge badge-neutral">Pendente</span>
+                        </div>
+                    </div>
+                    <div id="step-card-jtag" class="step-card">
+                        <div class="step-icon">⚡</div>
+                        <div class="step-info">
+                            <span class="step-name">3. Gravação FPGA</span>
+                            <span id="step-status-jtag" class="step-badge badge-neutral">Não Solicitado</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Caixa de Mensagem / Alerta Contextual -->
+                <div id="modal-alert-box" class="modal-alert-box alert-info">
+                    <div id="modal-alert-icon" class="alert-icon">ℹ️</div>
+                    <div class="alert-content">
+                        <h4 id="modal-alert-title">Status da Operação</h4>
+                        <p id="modal-alert-desc">Os arquivos MIF foram atualizados com sucesso.</p>
+                    </div>
+                </div>
+
+                <!-- Instruções Manuais no Quartus (exibido apenas se for ação só-MIF) -->
+                <div id="modal-manual-steps" class="quartus-steps">
+                    <h3>Fluxo Manual no Intel Quartus (caso queira recompilar pelo programa):</h3>
                     <ol>
                         <li><strong>Processing ➔ Update Memory Initialization File</strong> <kbd>Ctrl+Shift+U</kbd></li>
                         <li><strong>Processing ➔ Start ➔ Start Assembler</strong> <kbd>Ctrl+L</kbd></li>
-                        <li><strong>Tools ➔ Programmer ➔ Start</strong> (gravar o arquivo <code>.sof</code> atualizado na DE10-Lite)</li>
+                        <li><strong>Tools ➔ Programmer ➔ Start</strong> (gravar o arquivo <code>output_files/NES.sof</code> na placa DE10-Lite)</li>
                     </ol>
                 </div>
             </div>

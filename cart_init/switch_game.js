@@ -130,19 +130,24 @@ function switchGame(slug, { build = false, flash = false } = {}) {
         if (candidates.length === 1) {
             target = candidates[0];
         } else if (candidates.length > 1) {
-            console.log(`[AVISO] Múltiplos jogos encontrados para o termo '${cleanSlug}':`);
-            for (const c of candidates) {
-                console.log(`  - ${c.slug.padEnd(20)} (${c.title})`);
+            const msg = `Múltiplos jogos encontrados para o termo '${cleanSlug}':\n` +
+                candidates.map(c => `  - ${c.slug.padEnd(20)} (${c.title})`).join('\n') +
+                '\nPor favor, execute especificando o slug exato.';
+            if (require.main === module) {
+                console.log(`[AVISO] ${msg}`);
+                process.exit(1);
             }
-            console.log('\nPor favor, execute especificando o slug exato.');
-            process.exit(1);
+            throw new Error(msg);
         }
     }
 
     if (!target) {
-        console.error(`[ERRO] Jogo '${slug}' não encontrado no catálogo.`);
-        console.log('Execute `node cart_init/switch_game.js` para visualizar todos os slugs disponíveis.');
-        process.exit(1);
+        const msg = `Jogo '${slug}' não encontrado no catálogo. Execute 'node cart_init/switch_game.js' para ver os slugs disponíveis.`;
+        if (require.main === module) {
+            console.error(`[ERRO] ${msg}`);
+            process.exit(1);
+        }
+        throw new Error(msg);
     }
 
     const sourceDir = path.join(gamesDir, target.slug);
@@ -150,8 +155,12 @@ function switchGame(slug, { build = false, flash = false } = {}) {
     const srcChr = path.join(sourceDir, 'chr.mif');
 
     if (!fs.existsSync(srcPrg) || !fs.existsSync(srcChr)) {
-        console.error(`[ERRO] Arquivos MIF ausentes para o jogo em: ${sourceDir}`);
-        process.exit(1);
+        const msg = `Arquivos MIF ausentes para o jogo em: ${sourceDir}`;
+        if (require.main === module) {
+            console.error(`[ERRO] ${msg}`);
+            process.exit(1);
+        }
+        throw new Error(msg);
     }
 
     const destPrg = path.join(targetDir, 'prg.mif');
@@ -186,10 +195,11 @@ function switchGame(slug, { build = false, flash = false } = {}) {
         console.log('='.repeat(70));
 
         // Se solicitado build ou flash via terminal, executa o pipeline automático
+        let pipelineResult = null;
         if (build || flash) {
             if (quartus) {
                 try {
-                    quartus.runPipeline({
+                    pipelineResult = quartus.runPipeline({
                         switchMif: false,
                         doUpdateMif: true,
                         doAsm: true,
@@ -197,11 +207,15 @@ function switchGame(slug, { build = false, flash = false } = {}) {
                     });
                 } catch (pipeErr) {
                     console.error(`[AVISO PIPELINE] ${pipeErr.message}`);
+                    if (require.main !== module) throw pipeErr;
                 }
             } else {
                 console.warn('[AVISO] Módulo quartus_cli não disponível para automação.');
             }
-            return target;
+            return {
+                ...target,
+                pipeline: pipelineResult
+            };
         }
 
         console.log('\nFLUXO MANUAL NO INTEL QUARTUS (ou use `--flash` para automação total):');
@@ -212,10 +226,16 @@ function switchGame(slug, { build = false, flash = false } = {}) {
         console.log('  3. Gravar na Placa DE10-Lite:');
         console.log('     Tools -> Programmer -> Start (gravar o arquivo .sof atualizado)');
         console.log('='.repeat(70));
-        return target;
+        return {
+            ...target,
+            pipeline: null
+        };
     } catch (err) {
         console.error(`[ERRO] Falha ao alternar arquivos: ${err.message}`);
-        process.exit(1);
+        if (require.main === module) {
+            process.exit(1);
+        }
+        throw err;
     }
 }
 
