@@ -100,59 +100,59 @@ O sistema integra hardware programável, processador embutido, firmware em tempo
 ```mermaid
 flowchart TD
     subgraph HOST["Computador Host (PC)"]
-        UI_WEB["Interface Web & Gamepads (Porta 8080)\nnes_controller.js"]
-        UI_PY["Terminal Python Win32 (60 FPS)\nnes_controller.py"]
-        DLL["Driver Intel Altera\njtag_atlantic.dll"]
+        UI_WEB["Interface Web e Gamepads (Porta 8080)<br/>pc_controller/nes_controller.js"]
+        UI_PY["Terminal Python Win32 (60 FPS)<br/>pc_controller/nes_controller.py"]
+        DLL["Driver Intel Altera<br/>jtag_atlantic.dll"]
         
-        UI_WEB -->|Frame ASCII !P1P2 ou Binário 0x5A| DLL
-        UI_PY -->|Polling de Hardware| DLL
+        UI_WEB -->|"Comandos de Controle"| DLL
+        UI_PY -->|"Comandos de Controle"| DLL
     end
 
-    subgraph CABLE["Interface Física"]
-        USB_CABLE["Cabo USB Mini-B (USB-Blaster II)\nProgramação JTAG + Dados"]
-        DLL --> USB_CABLE
+    subgraph CABLE["Conexao Fisica"]
+        USB_CABLE["Cabo USB Mini-B (USB-Blaster II)<br/>Gravacao JTAG e Canal Serial"]
+        DLL -->|"Pacotes JTAG Atlantic"| USB_CABLE
     end
 
-    subgraph DE10["Placa Terasic DE10-Lite (Intel MAX 10 FPGA)"]
-        subgraph QSYS["Subsistema Platform Designer (Nios II @ 50 MHz)"]
-            JTAG_IP["IP altera_avalon_jtag_uart\nFIFO RX/TX de 64 Bytes"]
-            NIOS_CPU["Altera Nios II/e Softcore\nExecuta usb_controller.elf"]
-            SDRAM_CHIP["SDRAM Externa (IS42S16320D)\n64 MB / Barramento 16-bit"]
-            PIO_REG["Avalon PIO keycode_export\nRegistrador Paralelo de 32 bits"]
-            
-            JTAG_IP <-->|Avalon-MM Bus| NIOS_CPU
-            NIOS_CPU <-->|Instruções / Dados| SDRAM_CHIP
-            NIOS_CPU -->|Escrita Atômica de 32-bit| PIO_REG
-        end
+    subgraph QSYS["Placa DE10-Lite: Subsistema Nios II (50 MHz)"]
+        JTAG_IP["IP altera_avalon_jtag_uart<br/>FIFO RX e TX de 64 Bytes"]
+        NIOS_CPU["Processador Nios II/e Softcore<br/>Firmware usb_controller.elf"]
+        SDRAM_CHIP["SDRAM Externa IS42S16320D<br/>64 MB / Barramento de 16 bits"]
+        PIO_REG["Avalon PIO keycode_export<br/>Registrador Paralelo de 32 bits"]
 
-        subgraph NES["Core Emulador NES em SystemVerilog"]
-            CTRL_CORE["Controlador Dual Player (src/controller.sv)\nRegistradores $4016 (P1) e $4017 (P2)"]
-            CPU_6502["CPU 6502 (Core T65 @ ~1.79 MHz)\nExecuta Código do Jogo"]
-            PPU_CORE["PPU 2C02 (src/ppu.sv @ ~5.37 MHz)\nRenderizador de Fundo e Sprites"]
-            MEM_BRAM["Memórias BRAM M9K\nRAM (2KB), VRAM (2KB), OAM (256B), PRG/CHR ROM"]
-            VGA_CORE["Controlador VGA (src/VGA_Controller.sv)\nVESA 640x480 @ 60 Hz (Pixel Clock 25.175 MHz)"]
-            
-            PIO_REG -->|Palavra Paralela keycode[31:0]| CTRL_CORE
-            CTRL_CORE <-->|Barramento CPU $4016 / $4017| CPU_6502
-            CPU_6502 <-->|Acesso a RAM e PRG-ROM| MEM_BRAM
-            CPU_6502 -->|Escrita em Registradores $2000-$2007 e DMA $4014| PPU_CORE
-            PPU_CORE <-->|Nametables e Padrões CHR| MEM_BRAM
-            PPU_CORE -->|Índices de Cores da Paleta| VGA_CORE
-        end
+        USB_CABLE -->|"Dados Seriais JTAG"| JTAG_IP
+        JTAG_IP -->|"Leitura FIFO"| NIOS_CPU
+        NIOS_CPU -->|"Instrucoes e Dados"| SDRAM_CHIP
+        SDRAM_CHIP -->|"Barramento SDRAM"| NIOS_CPU
+        NIOS_CPU -->|"Escrita Atomica 32-bit"| PIO_REG
+    end
 
-        subgraph PERIPH["Periféricos Físicos da Placa"]
-            HEX_DISP["Displays de 7 Segmentos (HEX0 a HEX5)\nTelemetria e Máscaras dos Controles"]
-            LEDR_PINS["LEDs Vermelhos (LEDR[9:0])\nAtividade do Barramento de Endereços"]
-            VGA_OUT["Conector VGA (15 Pinos)\nDAC Resistor Ladder 12-bit RGB"]
-            KEY_RESET["Botão Físico KEY[0]\nReset da CPU 6502"]
-            
-            PIO_REG --> HEX_DISP
-            CPU_6502 --> LEDR_PINS
-            VGA_CORE --> VGA_OUT
-            KEY_RESET --> CPU_6502
-        end
+    subgraph NES["Placa DE10-Lite: Core Emulador NES (SystemVerilog)"]
+        CTRL_CORE["Controlador Dual Player (src/controller.sv)<br/>Registradores 4016 P1 e 4017 P2"]
+        CPU_6502["CPU 6502 T65 (1.79 MHz)<br/>Execucao de Instrucoes"]
+        PPU_CORE["PPU 2C02 (src/ppu.sv)<br/>Renderizador de Fundo e Sprites"]
+        MEM_BRAM["Memorias BRAM M9K<br/>RAM 2KB, VRAM 2KB, OAM 256B, PRG e CHR ROM"]
+        VGA_CORE["Controlador VGA (src/VGA_Controller.sv)<br/>VESA 640x480 a 60 Hz"]
 
-        USB_CABLE --> JTAG_IP
+        PIO_REG -->|"Mascara keycode 31..0"| CTRL_CORE
+        CTRL_CORE -->|"Leitura Serial de Botoes"| CPU_6502
+        CPU_6502 -->|"Strobe e Controle"| CTRL_CORE
+        CPU_6502 -->|"Acesso a RAM e ROM"| MEM_BRAM
+        CPU_6502 -->|"Registradores PPU e DMA 4014"| PPU_CORE
+        PPU_CORE -->|"Interrupcao NMI V-Blank"| CPU_6502
+        PPU_CORE -->|"Leitura de Nametables e CHR"| MEM_BRAM
+        PPU_CORE -->|"Indices de Cores da Paleta"| VGA_CORE
+    end
+
+    subgraph OUT["Perifericos e Saidas da DE10-Lite"]
+        HEX_DISP["Displays de 7 Segmentos HEX0..HEX5<br/>Telemetria dE e Botoes P1 e P2"]
+        LEDR_PINS["LEDs Vermelhos LEDR9..0<br/>Barramento de Enderecos da CPU"]
+        VGA_OUT["Conector VGA 15 Pinos<br/>DAC Resistor Ladder 12-bit RGB"]
+        KEY_RESET["Botao Fisico KEY0<br/>Reset da CPU do NES"]
+
+        PIO_REG -->|"Mascara HEX"| HEX_DISP
+        CPU_6502 -->|"cpu_addr 9..0"| LEDR_PINS
+        VGA_CORE -->|"Sinais R, G, B, HS, VS"| VGA_OUT
+        KEY_RESET -->|"Reset Ativo Baixo"| CPU_6502
     end
 ```
 
@@ -161,27 +161,47 @@ flowchart TD
 ### 2.2 Interconexão de Módulos de Hardware no Silício
 
 ```mermaid
-flowchart LR
-    CLK50["Oscilador 50 MHz\n(MAX10_CLK1_50)"] --> PLL["sys_clk_pll (Qsys)"]
-    
-    PLL -->|cpu_clk ~1.79 MHz| CPU["CPU 6502\n(src/t65/T65.vhd)"]
-    PLL -->|ppu_clk ~5.37 MHz| PPU["PPU 2C02\n(src/ppu.sv)"]
-    PLL -->|vga_clk 25.175 MHz| VGA["VGA Controller\n(src/VGA_Controller.sv)"]
-    PLL -->|nes_clk 21.48 MHz| MEM["BRAM & DMA\n(RAM, VRAM, OAM)"]
-    PLL -->|sdram_clk| DRAM["SDRAM Controller"]
-
-    subgraph TOP["Módulo Top-Level (src/top.sv)"]
-        CPU <-->|Barramento $4016 / $4017| CTRL["controller.sv\n(CMOS 4021 Emulation)"]
-        CPU <-->|Endereço $0000-$1FFF / $8000-$FFFF| MEM
-        CPU <-->|Endereço $2000-$3FFF| PPU
-        PPU -->|Sinal nmi (V-Blank)| CPU
-        CPU -->|Trigger DMA $4014| MEM
-        PPU -->|Píxeis / Paleta| VGA
-        VGA -->|Sinais R, G, B, HS, VS| DAC["Saída VGA"]
+flowchart TD
+    subgraph CLK["Geracao e Distribuicao de Clocks"]
+        OSC["Oscilador 50 MHz (MAX10_CLK1_50)"]
+        PLL["sys_clk_pll (Platform Designer Qsys)"]
+        
+        OSC -->|"Clock Mestre 50 MHz"| PLL
+        PLL -->|"cpu_clk 1.79 MHz"| CPU
+        PLL -->|"ppu_clk 5.37 MHz"| PPU
+        PLL -->|"vga_clk 25.175 MHz"| VGA
+        PLL -->|"nes_clk 21.48 MHz"| MEM
+        PLL -->|"sdram_clk"| SDRAM_CTRL["Controlador SDRAM"]
     end
 
-    NIOS["Nios II / Qsys\n(JTAG UART Bridge)"] -->|keycode[31:0]| CTRL
-    NIOS -->|keycode[23:0]| HEX["HexDriver.sv\n(HEX0..HEX5)"]
+    subgraph TOP_LEVEL["Entidade Top-Level (src/top.sv)"]
+        CPU["CPU 6502 T65<br/>(src/t65/T65.vhd)"]
+        CTRL["controller.sv<br/>(Emulacao CMOS 4021)"]
+        PPU["PPU 2C02<br/>(src/ppu.sv)"]
+        MEM["Blocos de Memoria BRAM<br/>(ram.v, vram.v, OAM.v, chrrom.v)"]
+        VGA["VGA Controller<br/>(src/VGA_Controller.sv)"]
+        HEX_MOD["HexDriver.sv<br/>(HEX0 a HEX5)"]
+
+        CPU -->|"Escrita de Strobe 4016"| CTRL
+        CTRL -->|"Leitura Serial 4016 e 4017"| CPU
+        CPU -->|"Acesso a Memoria 0000-1FFF e 8000-FFFF"| MEM
+        CPU -->|"Escrita em Registradores 2000-2007"| PPU
+        CPU -->|"Disparo OAM DMA 4014"| MEM
+        PPU -->|"Sinal NMI V-Blank"| CPU
+        PPU -->|"Leitura de Padroes e Nametables"| MEM
+        PPU -->|"Indices de Cores RGB"| VGA
+    end
+
+    subgraph BRIDGE["Subsistema Nios II Bridge (Qsys)"]
+        NIOS["Processador Nios II e JTAG UART"]
+        PIO["Registrador PIO keycode_export (32 bits)"]
+        
+        NIOS -->|"Palavra de 32 bits"| PIO
+    end
+
+    PIO -->|"Mascara P1 e P2 (keycode 15..0)"| CTRL
+    PIO -->|"Telemetria e HEX (keycode 23..0)"| HEX_MOD
+    VGA -->|"DAC 12-bit R, G, B, HS, VS"| MONITOR["Monitor VGA 640x480"]
 ```
 
 ---
@@ -192,33 +212,33 @@ flowchart LR
 sequenceDiagram
     autonumber
     participant CPU as CPU 6502 (Jogo NES)
-    participant CTRL as Módulo controller.sv
+    participant CTRL as Modulo controller.sv
     participant PIO as Nios II (keycode_export)
     
-    Note over PIO,CTRL: Nios II mantém keycode[31:0] atualizado via JTAG UART
-    CPU->>CTRL: Escrita em $4016 com dado din[0]=1 (Strobe ON)
-    Note over CTRL: Trava os 8 botões em paralelo nos Shift Registers (P1 e P2)
-    CPU->>CTRL: Escrita em $4016 com dado din[0]=0 (Strobe OFF)
+    Note over PIO,CTRL: Nios II mantem keycode atualizado via JTAG UART
+    CPU->>CTRL: Escrita em 4016 com dado din 0 = 1 (Strobe ON)
+    Note over CTRL: Trava os 8 botoes em paralelo nos Shift Registers P1 e P2
+    CPU->>CTRL: Escrita em 4016 com dado din 0 = 0 (Strobe OFF)
     Note over CTRL: Comuta para modo de leitura serial (Serial Shift)
     
-    CPU->>CTRL: 1ª Leitura em $4016 (ou $4017)
-    CTRL-->>CPU: Retorna Bit 7 (Botão A)
-    CPU->>CTRL: 2ª Leitura em $4016 (ou $4017)
-    CTRL-->>CPU: Desloca registrador e retorna Bit 6 (Botão B)
-    CPU->>CTRL: 3ª Leitura em $4016 (ou $4017)
+    CPU->>CTRL: 1a Leitura em 4016 ou 4017
+    CTRL-->>CPU: Retorna Bit 7 (Botao A)
+    CPU->>CTRL: 2a Leitura em 4016 ou 4017
+    CTRL-->>CPU: Desloca registrador e retorna Bit 6 (Botao B)
+    CPU->>CTRL: 3a Leitura em 4016 ou 4017
     CTRL-->>CPU: Desloca registrador e retorna Bit 5 (Select)
-    CPU->>CTRL: 4ª Leitura em $4016 (ou $4017)
+    CPU->>CTRL: 4a Leitura em 4016 ou 4017
     CTRL-->>CPU: Desloca registrador e retorna Bit 4 (Start)
-    CPU->>CTRL: 5ª Leitura em $4016 (ou $4017)
+    CPU->>CTRL: 5a Leitura em 4016 ou 4017
     CTRL-->>CPU: Desloca registrador e retorna Bit 3 (D-Pad Cima)
-    CPU->>CTRL: 6ª Leitura em $4016 (ou $4017)
+    CPU->>CTRL: 6a Leitura em 4016 ou 4017
     CTRL-->>CPU: Desloca registrador e retorna Bit 2 (D-Pad Baixo)
-    CPU->>CTRL: 7ª Leitura em $4016 (ou $4017)
+    CPU->>CTRL: 7a Leitura em 4016 ou 4017
     CTRL-->>CPU: Desloca registrador e retorna Bit 1 (D-Pad Esquerda)
-    CPU->>CTRL: 8ª Leitura em $4016 (ou $4017)
+    CPU->>CTRL: 8a Leitura em 4016 ou 4017
     CTRL-->>CPU: Desloca registrador e retorna Bit 0 (D-Pad Direita)
     
-    Note over CTRL: Leituras adicionais (9ª em diante) retornam sempre '1'
+    Note over CTRL: Leituras adicionais (9a em diante) retornam nivel 1
 ```
 
 ---

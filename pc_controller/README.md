@@ -19,28 +19,29 @@ O IP **Altera Avalon JTAG UART** é o componente de hardware padrão da Intel FP
 ```mermaid
 flowchart LR
     subgraph PC["Computador Host (PC)"]
-        CLIENT["Interface Web (8080) / Python CLI"]
+        CLIENT["Interface Web (8080) e Python CLI"]
         DRIVER["Driver Nativo (jtag_atlantic.dll)"]
-        CLIENT --> DRIVER
+        CLIENT -->|"Comandos"| DRIVER
     end
 
-    subgraph CABLE["Interface Física"]
-        BLASTER["Cabo USB-Blaster (Cabo padrão da DE10-Lite)"]
-        DRIVER --> BLASTER
+    subgraph CABLE["Interface Fisica"]
+        BLASTER["Cabo USB-Blaster (Padrao DE10-Lite)"]
+        DRIVER -->|"Canal USB"| BLASTER
     end
 
     subgraph FPGA["Intel MAX 10 FPGA (10M50DAF484C7G)"]
-        SLD["SLD JTAG Hub (Silício FPGA)"]
-        IP_JTAG["IP altera_avalon_jtag_uart\n(Base: 0x0228 | IRQ 16)"]
-        CPU["Nios II Economy Core\n(Firmware na SDRAM)"]
-        PIO["Avalon PIO Keycode\n(Base: 0x01c0)"]
-        NES_CTRL["Controlador NES (src/controller.sv)\n$4016 (P1) e $4017 (P2)"]
+        SLD["SLD JTAG Hub (Silicio FPGA)"]
+        IP_JTAG["IP altera_avalon_jtag_uart<br/>Base 0x0228 / FIFO 64B"]
+        CPU["Nios II Economy Core<br/>Firmware na SDRAM"]
+        PIO["Avalon PIO keycode_export<br/>Base 0x01c0 (32 bits)"]
+        NES_CTRL["Controlador NES (src/controller.sv)<br/>Registradores 4016 e 4017"]
 
-        BLASTER --> SLD
-        SLD --> IP_JTAG
-        IP_JTAG <-->|Avalon-MM Bus| CPU
-        CPU -->|Dual Mask [P1, P2]| PIO
-        PIO -->|Wires p1_mask, p2_mask| NES_CTRL
+        BLASTER -->|"JTAG Stream"| SLD
+        SLD -->|"Sinais JTAG"| IP_JTAG
+        IP_JTAG -->|"Barramento Avalon-MM"| CPU
+        CPU -->|"Leitura e Escrita"| IP_JTAG
+        CPU -->|"Mascara P1 e P2"| PIO
+        PIO -->|"Linhas p1_mask e p2_mask"| NES_CTRL
     end
 ```
 
