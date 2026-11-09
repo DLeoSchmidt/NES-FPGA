@@ -91,10 +91,6 @@ O sistema integra hardware programável, processador embutido, firmware em tempo
 
 ## 2. Diagramas de Arquitetura e Fluxo (Mermaid Nativos)
 
-> [!NOTE]
-> **Compatibilidade de Diagramas no GitHub:**
-> O GitHub renderiza **nativamente** blocos de código com a sintaxe **Mermaid** (` ```mermaid `) direto no navegador, tanto em computadores quanto em dispositivos móveis, sem a necessidade de plugins ou servidores externos. Formatos como PlantUML **não** são suportados pelo renderizador padrão do GitHub.
-
 ### 2.1 Topologia Global do Sistema
 
 ```mermaid
