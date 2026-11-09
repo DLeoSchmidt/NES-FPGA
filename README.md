@@ -12,8 +12,10 @@ I made everything except for the 6502 CPU core which I took from a previous revi
 ![Project Image](https://github.com/iandailis/NES-FPGA/blob/main/docs/resources.JPG)
 
 > [!IMPORTANT]
-> **Para o passo a passo completo e detalhado de compilação e execução, consulte:**
-> 👉 **[BUILD_GUIDE.md](BUILD_GUIDE.md)** (Guia de compilação do Hardware Quartus, Firmware Nios II, gravação JTAG, troca rápida de 57 jogos e configuração dos controladores PC/Web).
+> **Documentação de Compilação e Execução:**
+> - 👉 **[COMPILACAO_DO_ZERO.md](COMPILACAO_DO_ZERO.md)**: **Guia Passo a Passo de Compilação do Zero** em qualquer computador novo, tanto via **Terminal (CLI)** quanto via **Interface Gráfica (Quartus Prime GUI + Eclipse)**.
+> - 👉 **[`compile_project.bat`](compile_project.bat)** (ou `build_all.bat`): Script de compilação automatizada com detecção inteligente de toolchains (Quartus 18.1 / Nios II), suporte a `--flash`, `--firmware`, `--game <slug>`, `--quick` e `--clean`.
+> - 👉 **[BUILD_GUIDE.md](BUILD_GUIDE.md)**: Guia completo de arquitetura do hardware Quartus, firmware Nios II, protocolo JTAG UART e configuração dos controladores Web e Python.
 
 Folders:
 - `cart_init/`: Biblioteca com 57 jogos Mapper 0 (NROM) prontos e CLI `switch_game.js` para troca instantânea de ROMs e compilação rápida via terminal.

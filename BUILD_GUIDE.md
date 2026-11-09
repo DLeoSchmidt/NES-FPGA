@@ -2,6 +2,11 @@
 
 Este guia documenta detalhadamente todo o processo de desenvolvimento, compilação de hardware, compilação de software/firmware do processador Nios II e execução do emulador NES na placa de desenvolvimento **Terasic DE10-Lite** (Intel MAX 10 `10M50DAF484C7G`).
 
+> [!TIP]
+> **Precisa compilar do zero em um computador novo ou executar em 1 clique?**
+> - Acesse o **[COMPILACAO_DO_ZERO.md](COMPILACAO_DO_ZERO.md)** para o passo a passo completo desde a instalação das ferramentas até a execução final.
+> - Ou execute o script automatizado **[`compile_project.bat`](compile_project.bat)** (ex: `compile_project.bat --flash --firmware`).
+
 ---
 
 ## Sumário
