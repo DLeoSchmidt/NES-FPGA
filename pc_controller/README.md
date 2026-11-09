@@ -2,6 +2,12 @@
 
 Sistema de controle para 2 jogadores simultâneos no emulador NES-FPGA rodando na placa **Terasic DE10-Lite (Intel MAX 10 FPGA)**, com suporte nativo de ultra-baixa latência ao **IP Intel Altera JTAG UART** e método extra via **Porta Serial DB9 / RS-232**.
 
+> [!NOTE]
+> Documentação Complementar:
+> - 📘 **[README.md Principal](../README.md):** Arquitetura geral do emulador, processador 6502, Nios II, VGA, memórias e barramentos.
+> - 📗 **[BUILD_GUIDE.md](../BUILD_GUIDE.md):** Guia completo de compilação de hardware e firmware.
+> - 📙 **[COMPILACAO_DO_ZERO.md](../COMPILACAO_DO_ZERO.md):** Guia passo a passo para configuração em computadores novos.
+
 ---
 
 ## 1. Arquitetura do IP Intel JTAG UART (`altera_avalon_jtag_uart`)

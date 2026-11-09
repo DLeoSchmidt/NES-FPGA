@@ -52,7 +52,7 @@ O projeto implementa um console Nintendo Entertainment System (NES) funcional na
 |                                                                                    |
 |  [ Navegador Web / Gamepads ]             [ Terminal Python ]                      |
 |  run_web_controller.bat                   run_python_controller.bat                 |
-|  (Porta 3000 -> WebSockets)               (Win32 GetAsyncKeyState)                 |
+|  (Porta 8080 -> WebSockets)               (Win32 GetAsyncKeyState)                 |
 |               \                                   /                                |
 |                +-----------------+---------------+                                 |
 |                                  v                                                 |
@@ -127,14 +127,8 @@ Quando a placa DE10-Lite for conectada pela primeira vez via cabo USB Mini-B:
 
 ### 2.3 Node.js e Python
 Para rodar a interface de controle Web, o gerenciador de jogos e o controlador em Python:
-- **Node.js (v18.x ou superior):** Baixe em [nodejs.org](https://nodejs.org/).
-- **Python (v3.10 ou superior):** Baixe em [python.org](https://www.python.org/) (certifique-se de marcar *"Add python.exe to PATH"* durante a instalação).
-- Instale as dependências da aplicação web executando na raiz do projeto:
-  ```cmd
-  cd web_controller
-  npm install
-  cd ..
-  ```
+- **Node.js (v18.x ou superior):** Baixe em [nodejs.org](https://nodejs.org/). O servidor web e WebSocket (`pc_controller/nes_controller.js`) utiliza exclusivamente bibliotecas nativas do Node.js, sem necessidade de `npm install` ou pacotes externos.
+- **Python (v3.10 ou superior):** Baixe em [python.org](https://www.python.org/) (certifique-se de marcar *"Add python.exe to PATH"* durante a instalação) para o controlador nativo Win32 de console.
 
 ---
 
@@ -389,7 +383,7 @@ Ideal para jogar sozinho ou em dupla (Dual Player) com teclado ou joysticks USB/
 1. Dê duplo clique em [`run_web_controller.bat`](file:///C:/HDL/t4/NES-FPGA/run_web_controller.bat) (ou execute no terminal).
 2. O servidor iniciará e abrirá automaticamente seu navegador em:
    ```text
-   http://localhost:3000
+   http://localhost:8080
    ```
 3. A interface web detecta automaticamente:
    - Digitação pelo teclado do PC.

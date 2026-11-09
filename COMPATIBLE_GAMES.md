@@ -2,6 +2,17 @@
 
 Lista de jogos extraída diretamente do repositório oficial [NES Directory](https://nesdir.github.io/mapper0.html), filtrada exclusivamente para versões em **Inglês** (priorizando **USA** quando disponível).
 
+> [!TIP]
+> **Como carregar qualquer um destes jogos no FPGA:**
+> - Via script de compilação automatizada: `compile_project.bat --game <slug> --quick --flash`
+> - Via CLI dedicada: `node cart_init/switch_game.js <slug> --quick --flash`
+> - Via Interface Web: selecione o jogo no menu suspenso em `http://localhost:8080` e clique em *⚡ Gravar FPGA*.
+>
+> Documentação Complementar:
+> - 📘 **[README.md Principal](README.md):** Arquitetura completa de hardware e software do emulador.
+> - 📙 **[COMPILACAO_DO_ZERO.md](COMPILACAO_DO_ZERO.md):** Guia passo a passo de configuração e compilação do zero.
+> - 📗 **[BUILD_GUIDE.md](BUILD_GUIDE.md):** Guia detalhado da esteira de build e memória.
+
 > **Critérios de Compatibilidade no Emulador Atual:**
 > - **Mapper:** 0 (NROM-128 e NROM-256).
 > - **Mirroring:** O emulador atual possui lógica dedicada para **Espelhamento Vertical** (`Vertical Mirroring`). Jogos de tela única ou com espelhamento vertical funcionam de forma 100% nativa.

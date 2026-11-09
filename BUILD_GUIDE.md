@@ -38,7 +38,7 @@ O sistema é dividido em três camadas integradas:
 |                                                                                   |
 |  [ Navegador Web / Gamepads ]            [ Terminal Python ]                      |
 |  run_web_controller.bat                  run_python_controller.bat                |
-|  (Porta 3000 -> WebSockets)              (Captura Win32 GetAsyncKeyState)        |
+|  (Porta 8080 -> WebSockets)              (Captura Win32 GetAsyncKeyState)        |
 |               |                                       |                           |
 |               +-------------------+-------------------+                           |
 |                                   v                                               |
@@ -103,17 +103,25 @@ C:\HDL\t4\NES-FPGA\
 ├── NES.qpf                   <- Arquivo de Projeto do Intel Quartus Prime
 ├── NES.qsf                   <- Definições de pinagem e parâmetros do FPGA
 ├── prg.mif / chr.mif         <- Imagens ativas de memória do jogo carregado
-├── BUILD_GUIDE.md            <- Este guia de compilação
-├── README.md                 <- Visão geral do repositório
+├── README.md                 <- Documento Mestre Arquitetural e Operacional
+├── COMPILACAO_DO_ZERO.md     <- Guia Passo a Passo de Instalação e Compilação do Zero
+├── BUILD_GUIDE.md            <- Este guia técnico de arquitetura e esteira de build
+├── COMPATIBLE_GAMES.md       <- Catálogo dos 57 jogos clássicos Mapper 0 (NROM)
+├── compile_project.bat       <- Automação de compilação completa com flags CLI
+├── build_all.bat             <- Atalho direto para compile_project.bat
 │
-├── src/                      <- Código Fonte em SystemVerilog do Hardware NES
+├── src/                      <- Código Fonte em SystemVerilog / VHDL do Hardware NES
 │   ├── top.sv                <- Módulo Top-Level (integração NES + Nios II + VGA + HEX Debug)
-│   ├── nes.sv                <- Core do emulador Nintendo Entertainment System
-│   ├── cpu.sv / ppu.sv       <- Processador 6502 e Unidade de Processamento Gráfico
-│   ├── ram.sv / cart.sv      <- Memória interna e controladora do cartucho
-│   ├── controller.sv         <- Driver de controles (Modo Dual Mask P1/P2)
+│   ├── controller.sv         <- Driver de controles (Modo Dual Mask P1/P2 com Strobe)
+│   ├── ppu.sv                <- Unidade de Processamento Gráfico (PPU 2C02)
+│   ├── VGA_Controller.sv     <- Controlador de sincronismo VGA VESA 640x480 @ 60 Hz
 │   ├── HexDriver.sv          <- Decodificador de 7 segmentos para os displays HEX0-HEX5
-│   └── vga_controller.sv     <- Controlador de sincronismo VGA 640x480
+│   ├── sync.sv               <- Sincronizadores anti-metaestabilidade para botões e chaves
+│   ├── t65/                  <- Núcleo da CPU 6502 (T65.vhd, T65_ALU.vhd, T65_MCode.vhd)
+│   ├── ram/                  <- Memória RAM interna de 2 KB da CPU (ram.v)
+│   ├── vram/                 <- Memória Video RAM de 2 KB para Nametables (vram.v)
+│   ├── OAM/                  <- Memória de Sprites de 256 bytes (OAM.v)
+│   └── chrrom/               <- Memória ROM de padrões gráficos de 8 KB (chrrom.v)
 │
 ├── qsys/                     <- Platform Designer (Qsys) e Software Nios II
 │   ├── NIOSIIe.qsys          <- Descrição do sistema Nios II (CPU, SDRAM, JTAG UART, PIOs)
@@ -125,15 +133,19 @@ C:\HDL\t4\NES-FPGA\
 ├── cart_init/                <- Biblioteca de ROMs e scripts de chaveamento
 │   ├── switch_game.js        <- CLI para listagem, busca e troca rápida de jogos
 │   ├── quartus_cli.js        <- Utilitário de auto-detecção priorizando Quartus 18.1
+│   ├── nes_to_mif.js         <- Conversor de ROMs iNES para formato MIF
 │   └── games/                <- 57 jogos NROM (Mapper 0) compilados (.mif)
 │
 ├── pc_controller/            <- Controladores PC (Node.js Web + Python Console + Serial DB9)
 │   ├── nes_controller.js     <- Servidor Web + WebSocket + Ponte JTAG UART + Serial DB9
 │   ├── nes_controller.py     <- Console Python nativo Win32 (60 FPS) + Serial DB9
+│   ├── jtag_bridge.py        <- Wrapper Python da biblioteca jtag_atlantic.dll
+│   ├── test_jtag_uart.py     <- Script de diagnóstico e benchmark de RTT da JTAG UART
 │   └── web/                  <- Interface HTML5 com suporte a Teclado, Gamepads e WebSerial
 │
-├── run_web_controller.bat    <- Atalho de 1 clique para iniciar o servidor Web
-└── run_python_controller.bat <- Atalho de 1 clique para iniciar o controle Python
+├── run_web_controller.bat    <- Atalho de 1 clique para iniciar o servidor Web (porta 8080)
+├── run_python_controller.bat <- Atalho de 1 clique para iniciar o controle Python
+└── test_jtag_uart.bat        <- Atalho de 1 clique para diagnóstico do IP JTAG UART
 ```
 
 ---
