@@ -6,12 +6,14 @@ Passo a passo direto para configurar um computador novo, compilar hardware e sof
 
 ## 1. Pré-requisitos
 
-1. **Intel Quartus Prime Lite Edition v18.1** (incluindo suporte à família **MAX 10** e o **Nios II Embedded Design Suite / EDS**).
+1. **Intel Quartus Prime Lite Edition v18.1** (incluindo suporte à família **MAX 10** e o **Nios II Embedded Design Suite / EDS**, conjunto de ferramentas e compilador GCC para o processador auxiliar).
 2. **Driver do Altera USB-Blaster:** Ao plugar a DE10-Lite via USB no Windows pela primeira vez, instale o driver manualmente pelo Gerenciador de Dispositivos apontando para `<Quartus>\quartus\drivers\usb-blaster`.
-3. **Node.js (v16+)** e **Python 3 (64 bits recomendado)**: usados pelo gerenciador de jogos, servidor Web e ponte `jtag_atlantic.dll`.
+3. **Node.js (v16+)** e **Python 3 (64 bits recomendado)**: usados pelo gerenciador de jogos, servidor Web e ponte `jtag_atlantic.dll` (biblioteca de comunicação USB-JTAG).
 
 > [!NOTE]
 > Use **Python 64 bits** porque a biblioteca `jtag_atlantic.dll` do Quartus em `quartus/bin64/` é 64 bits.
+
+Glossário rápido dos arquivos gerados: **`.sof`** (*SRAM Object File*, bitstream de hardware gravado na FPGA), **`.elf`** (*Executable and Linkable Format*, firmware C do Nios II carregado na memória **SDRAM** externa) e **`.mif`** (*Memory Initialization File*, conteúdo inicial do jogo nas memórias internas **BRAM**).
 
 ---
 

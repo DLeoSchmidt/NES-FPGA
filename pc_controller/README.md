@@ -48,11 +48,11 @@ Escrito 100% com módulos nativos do Node.js (`http`, `crypto`, `fs`, `path`, `c
 
 ## 3. Como Acessar a `jtag_atlantic.dll` e o IP JTAG UART
 
-O IP **`altera_avalon_jtag_uart`** (`jtag_uart_0` no Qsys, base `0x0228`, FIFOs RX/TX de 64 bytes) trafega dados seriais encapsulados na cadeia JTAG padrão, eliminando conversores USB-Serial extras.
+O bloco **IP** (*Intellectual Property*) **`altera_avalon_jtag_uart`** (`jtag_uart_0` no Qsys, endereço base `0x0228`, buffers **FIFO** *First-In, First-Out* de 64 bytes RX/TX) trafega dados seriais encapsulados na própria cadeia **JTAG** de gravação, eliminando conversores USB-Serial extras.
 
 ### Por que usar `jtag_atlantic.dll` via Python em vez de `nios2-terminal.exe`?
 
-O `nios2-terminal.exe` conectado por pipes (`stdin`/`stdout`) no Windows sofre buffering de console e filtragem de caracteres de controle em TTY. A biblioteca nativa da Intel **`jtag_atlantic.dll`** (localizada em `<Quartus>/quartus/bin64/jtag_atlantic.dll`) permite leitura e escrita direta nas FIFOs do nó SLD JTAG Hub em memória.
+O `nios2-terminal.exe` conectado por pipes (`stdin`/`stdout`) no Windows sofre bufferização de console e filtragem de caracteres de controle em terminal (TTY). A biblioteca nativa **DLL** (*Dynamic-Link Library*) da Intel **`jtag_atlantic.dll`** (localizada em `<Quartus>/quartus/bin64/jtag_atlantic.dll`) permite leitura e escrita direta nas FIFOs do nó **SLD JTAG Hub** (*System-Level Debugging Hub*, controlador interno da FPGA que compartilha o cabo USB-Blaster).
 
 Como a DLL exporta funções em C++ com nomes decorados pelo compilador MSVC, [`jtag_bridge.py`](jtag_bridge.py) a carrega com `ctypes.CDLL` e faz o binding explícito de 7 símbolos:
 

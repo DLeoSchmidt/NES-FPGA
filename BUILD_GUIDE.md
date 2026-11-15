@@ -6,9 +6,9 @@ Referência prática para o dia a dia após o ambiente estar instalado (para ins
 
 ## 1. Como Converter uma ROM `.nes` Nova para as Memórias do Projeto
 
-O emulador lê o código e os gráficos do jogo diretamente das BRAMs internas inicializadas por [`cart_init/prg.mif`](cart_init/prg.mif) (64 KB) e [`cart_init/chr.mif`](cart_init/chr.mif) (8 KB).
+O emulador lê o código e os gráficos do jogo diretamente das memórias internas da FPGA (**BRAM**, *Block RAM*), inicializadas pelos arquivos **`.mif`** (*Memory Initialization File*) [`cart_init/prg.mif`](cart_init/prg.mif) (64 KB para programa) e [`cart_init/chr.mif`](cart_init/chr.mif) (8 KB para gráficos).
 
-1. **Verifique o formato:** A ROM precisa ser **iNES Mapper 0 (NROM)** — até 32 KB de PRG-ROM (1 ou 2 bancos de 16 KB) e 8 KB de CHR-ROM. Consulte exemplos validados em [`COMPATIBLE_GAMES.md`](COMPATIBLE_GAMES.md).
+1. **Verifique o formato:** A ROM precisa usar **iNES Mapper 0 (NROM)** — cartucho simples sem chip de troca de bancos de memória (*bank switching*), contendo até 32 KB de **PRG-ROM** (*Program ROM*, 1 ou 2 bancos de 16 KB) e 8 KB de **CHR-ROM** (*Character ROM*, blocos gráficos). Consulte exemplos validados em [`COMPATIBLE_GAMES.md`](COMPATIBLE_GAMES.md).
 2. **Converta para `.mif` com o script Node.js:**
    ```bash
    node cart_init/nes_to_mif.js caminho/do/jogo.nes
